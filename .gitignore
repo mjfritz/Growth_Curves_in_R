@@ -45,4 +45,5 @@ docs/
 po/*~
 
 # Created files
-parsed
+parsed/
+testplot.pdf
