@@ -1,0 +1,322 @@
+---
+title: "Growth Curve Analysis Intro"
+output:
+  html_document:
+    df_print: paged
+---
+# Overview
+These are steps I take to analyze the TilS growth curves. Some things in the parse_96wellGrowthCurves.R script are specific to the 48-hour curves I run, but I tried to make the other parts more general. So, you might need to tailor that script to match what the different plate readers give you.
+
+The basics steps however are:
+1. Run a growth curve on either the VersaMax or Tecan Spark readers.
+2. Create a plate template that defines what samples and coniditions are in which wells.
+3. Read in the plate(s) and template(s) to R.
+4. Format and combine data frames.
+5. Calculate the average absorbance readings and plot general growth curves.
+6. Use growthrates to fit curves to each individual replicate, tailoring to what measures I'm looking for. (Extract or derive measures.)
+7. Do a statistical comparison of the measures.
+8. Plot results.
+
+This requires some familiarity with R, but hopefully not too much, plus a little understanding of ggplot2. (Also, I am a bit of a novice to coding, so there are definitely multiple ways of accomplishing similar goals. Some much more elegant than these. But I don't know them yet.)
+
+## Dependecies
+These packages are what I run. Some of them are not entirely necessary, but make plotting easier/nicer. I have marked them. The order of loading can also matter.
+```{r}
+library(rstatix)
+library(openxlsx)
+library(plyr)
+library(janitor)
+library(tidyr)
+library(reshape2)
+library(ggplot2)
+library(ggrepel) # Not necessary
+library(ggpubr)
+library(growthcurver)
+library(RColorBrewer) # Not necessary
+library(scales) # Not entirely necessary
+library(emmeans)
+library(multcomp)
+library(multcompView)
+library(DescTools)
+library(paletteer) # Not necessary
+library(dplyr)
+library(tidyverse)
+library(growthrates)
+library(here) # Not necessary, just what I use to make pathing things easier, and only dependent on project sub-folders.
+library(inauguration)
+source(here("parse_96wellGrowthCurves.R")) # This is the script I wrote, just make sure to path to wherever you keep it.
+library(grid) # I think this is uncessary.
+library(gtable) # I think ggplot already loads this.
+```
+
+As a general tip: the "Environment" tab in the upper right corner of RStudio can be really nice to quickly see what stored objects you have, and what is stored in them by clicking on the blue arrow (to get a drop down summary of structure and conents) or their name (to pop open a new tab, where you can see all of the contents and hover over the column names to see data type.) This is great when trying to figure out what exactly a function (or you) did to your data.
+# The Data
+
+These scripts require that you have two things for each plate:
+
+1. An xlsx file from the plate reader. (For xls files, just open in Excel and resave as an xlsx.)
+2. A plate template that has columns for well name, strain/genotype, condition, replicate (within the plate), and plate name (helpful when run in a series)
+   + Empty wells should have "blank" as their sample name.
+   + The way the code is written (and to make your life easier later), *do not use periods or dots in your names* for strain, condition, etc. Hypens and underscores are OK. Some of the formatting tricks rely on the dots as delimitters between items.
+   + To save you time later in plotting, it can be useful to use spaces and capitalization as you would like to see in your labels. **This is typically a terrible idea for programming.** R seems to do OK with it though (as long as you use double quotes for variable values "tilS N274Y", and single apostrophes for variable names 'Time Elapsed').
+
+For the tempalte, I use plate_template.xlsx. I keep a clean one, and then make a new one for each plate. (In the process of filling them out, I resort the columns to speed up numbering replicates. BUT because I kept well names as one unit (A12 verus row A column 12), Excel has trouble re-ordering them.) When running a series of plates, keep the naming (including capitalization) of strains and conditions the same between them. It can also be helpful to name the plates themselves sequentially with the experiment name rather than just with a date.  
+
+
+## Reading in Data
+
+The plate reader you use will determine which function you will call.  
+
+* `parse_growth_Spark` for the Tecan Spark (coming from Tecan's Spark Control software)
+* `parse_growth_Versa_xlsx` for the two VersaMax (coming from SoftMax Pro software, and saved as an xlsx)
+
+
+For the Tecan Spark, if you are using timing other than reads every 10 minutes over 48 hours you, you will need to adjust the code for the `parse_growth_Spark` function, so that the rows it looks to read in, match the rows that you have data at.
+
+Both functions expect:  
+
+1. The data file with a path.  (e.g. "C:\My Documents\GC\plate1.xlsx")
+2. The template file with a path.  
+3. What format you want the output data in (options are "R", "prism", "python"). This mostly affects how it formats the time column.
+4. Whether or not to remove the media blanks.
+   + If you inoculated with enough cells to affect the OD *and* you don't wish to use this value as the baseline, make this parameter `FALSE`. You will want to then want to modify the `format_GC` function in the R script itself. See the comments in that section for help.
+   + After modification, you'll need to read save the `parse_96wellGrowthCurves.R` file, and re-run `source(here...)` line to load the changes.
+5. A folder where it will write a copy of the parsed out data as an xlsx file. It will create the folder if it does not exist already.
+
+```{r}
+R1 <- parse_growth_Spark(datawithpath = here("data", "1-10-2021_RKS-swap1.xlsx"),
+                         templatewithpath = here("data", "1-10-2021_plate_template.xlsx"),
+                         output = "R", remove_emptys = TRUE, outputfoldername = "parsed")
+
+C2 <- parse_growth_Spark(here("data", "1-17-2021_CSH-swap2.xlsx"),
+                         here("data", "1-17-2021_plate_template.xlsx"),
+                          "R", remove_emptys = TRUE, outputfoldername = "parsed")
+
+C3 <- parse_growth_Spark(here("data", "1-20-2021_CSH-swap3.xlsx"),
+                         here("data", "1-20-2021_plate_template.xlsx"),
+                          "R", remove_emptys = TRUE, outputfoldername = "parsed")
+
+R2 <- parse_growth_Spark(here("data", "1-22-2021_RKS-swap2.xlsx"),
+                         here("data", "1-22-2021_plate_template.xlsx"),
+                         "R", remove_emptys = TRUE, outputfoldername = "parsed")
+
+R3 <- parse_growth_Spark(here("data", "1-24-2021_RKS-swap3.xlsx"),
+                         here("data", "1-24-2021_plate_template.xlsx"),
+                         "R", remove_emptys = TRUE, outputfoldername = "parsed")
+
+```
+In these examples, I've used the `here` package to create semi-nonspecfic directions to the file (which is useful for when your project folders move around, but the R-notebook and the files stay together. It assumes that the data structure within a project folder stays the same.) The `here` function also removes system-specific jargon (Windows use \ instead of / in filing, unlike other OSs.)
+
+These functions will give each replicate its own `sample_name` of the format `[strain].[condition].[platename].[replicate number on plate]`, and then return the following data frames (as a list):
+
+1. The data as a data frame with each well as its own column, which can be useful to prep for other packages, and a row for each time point.
+
+```{r}
+names(R1[[1]])
+nrow(R1[[1]])
+```
+
+2. A "melted" or "long" format, that is useful for plotting and combining. Here column names do not depend on sample names. The total length is much longer, specifically 54 times longer = 6 (number of strains) $\times$ 3 (number of conditions) $\times$ 3 (number of replicates of each sample).
+```{r}
+names(R1[[2]])
+nrow(R1[[2]])
+```
+
+
+3. A dataframe that just contains the sample data names and conditions.
+```{r}
+names(R1[[3]])
+```
+
+(Note that 1 and 2 are typically interconverted, and 3 can be dervied from 1 or 2.)
+
+## Initial look at the data
+
+The `plot_from_melted_plate_facted` and `plot_from_melted_plate` functions are both simple functions, meant to be a fast way to look at each plate. (They can take more than 1 plates-worth of data in one data frame, but formatting and customiazability are limited.) The first returns a single plot faceted by whatever your different conditions are, the second returns 1 plot per condition. Both require you to give them the data frame (no path needed this time), a (named) color vector for coloring by strain, a title in string format, and the type of scaling on the y-axis you would like ("straight", "log2", "log10", "natural_log".)
+
+### Color vectors
+
+#### Unnamed color vectors.
+If I had different strains across different plates and didn't care that colors matched, I could just create an unnamed color vector.    
+I'm going to use the [`paletteer`](https://github.com/EmilHvitfeldt/paletteer) package's palette constructors. The package makes accessing a lot of the preset palettes easier. Auto-fill is your friend here (start typing without quotation marks). It also has other functions aside from palette constructors to change colors when manually making your plot within the plotting call.  
+Here I'm going to call three colors from a discrete (that's what the d is for) palette. 
+```{r}
+sixcolors.noname <- paletteer_d("nationalparkcolors::Saguaro", n = 6)
+show_col(sixcolors.noname)
+```
+
+If I had really specific colors that I new the hex code for, I could also enter them as a list of strings into the `sixcolors` vector.
+
+#### Named color vectors
+I like named color vectors to keep colors consistent across plots. For this, we just need to make a vector of color codes, each entry named to match the levels of whatever variable you'd like to color on. Here we're matching number of strains
+
+First, find how many colors you'll need for each. Here I know that the strains/samples I ran on each plate are all the same, so I'm only testing R1.
+```{r}
+unique(R1[[2]]$strain)
+length(unique(R1[[2]]$strain))
+```
+Spefically this call looks at all of the values under "strain" in the second data frame in the list, and lists the unique values. The `length()` function counts, which is useful if you have a lot of something.  
+If we had had different strains on each plate, but wanted to keep the colors consistent, you would need to append each list of strains together and maybe save it as that seems like it would be handy.
+```{r}
+otherstrains <- c("P421L", "P421L", "tRNA-Lys", "PPC", "PPC", "tRNA-Lys", "A244T", "WT")
+total_strains <- unique(c(R1[[2]]$strain, otherstrains, R2[[2]]$strain))
+total_strains
+length(total_strains)
+```
+
+Now we can use a palette constructor to generate six colors, and use `names()` to set the sames of each color. 
+```{r}
+eightcolors <- paletteer_d("vapoRwave::hotlineBling", 8)
+show_col(eightcolors)
+```
+
+If I don't yet care about the ordering of colors, I can use the previous type of call to make assiging names easy, without typing them all out.
+```{r}
+names(eightcolors) <- total_strains
+```
+If you wish to start assigning names to specific colors, note the order of the colors, then enter the names of each strain in a list in the matching order.
+
+Note that because of the order of the two lists, the cyan and dark blue color will never be shown in the following graphs, because those strains don't actually show up on the plates.
+
+### The quick plots of all data
+
+```{r}
+plot_from_melted_plate_faceted(.data = R1[[2]], colors = eightcolors, title = "Modified RKS, plate 1", yscale = "straight")
+```
+
+This can be hard to see with the scaling, so you might want to be able to page through each condition. Note that the condition plotted is appended to the end of your title.
+```{r}
+plot_from_melted_plate(R1[[2]], eightcolors, "Modified RKS, plate 1", "straight")
+```
+
+These sorts of quick plots are good for giving you a general idea of what is going on. Also, that I should cut-off my data around 34 to 36 hours. You should run through all of your plates to see how each replicate did as well. From these, I already know that CSH-plate1 was no good, so that is why there isn't a C1.
+
+## Combining data
+
+The melted format (where all plates have the same column names) makes combining data easy. We will simply attach each data frame to the bottom of the last.
+```{r}
+allplates <- bind_rows(R1[[2]], R2[[2]], R3[[2]], C2[[2]], C3[[2]])
+nrow(allplates)
+```
+
+Again we can also get an idea of what all of the data looks like on the same plot via individual replicates.
+
+```{r}
+plot_from_melted_plate(allplates, sixcolors.noname, "All plates", "straight")
+```
+
+You can see that my CSH_mod conditions definitely vary by plate, but overall trends are maintained.
+
+### Formatting the data
+
+In order to start getting things ready to plot, and to analyze, we should remove the baseline from the absorbance readings, and order the strains and conditions in a meaningful way. We can do that with `format_GC`, which will remove the baseline from each well's readings (definied as the minimum value measured across all times), and allow you to order the strains and conditions in a way that makes sense for you. It also makes both of these variables the "factor" type, which is great for categorical variables, and often required for certain stat analyses.
+
+To start, let's see how R ordered my strains and conditions:
+```{r}
+unique(allplates$strain)
+unique(allplates$condition)
+```
+This corresponds to the order that R read them in, and the order that each plate's dataframe was attached. This is fine, but I would like to compare to WT (so list it first), and the conditions are step-wise variations. So, matching the exact names already being used, enter them in lists in the order you wish them to appear. This can be helpful when you are using numbers that are not actually in "order" but rather are names.
+
+```{r}
+df <- format_GC(allplates,
+                strainfactors = c("WT", "A244T", "N274Y", "N445K", "P421L", "tRNA-Ile2"),
+                conditionfactors = c("RKS", "RKS_mod", "CSH_mod", "CSH"))
+unique(df$strain)
+unique(df$condition)
+```
+
+### Plotting the means
+We can also look at quick plot of the means at each time point using `mean_OD` and `bare_meanplot` plot. `mean_OD` just needs the data frame you wish to calculate the mean ODs for, and how you want to group the data. It will return a data frame columns for OD-corrected absorbance, mean, and error stats.  
+Most often for general growth curve representation, we want to group by time, strain, and condition. The grouping variables need to be entered in a list with quotes around each. There is a row each strain/condition combination. (Here 6 strains $\times$ 4 conditions $\times$ 288 time points.)
+```{r}
+df.means <- mean_OD(df, c("time", "strain", "condition"))
+nrow(df.means)
+```
+Note that none of the raw data is in the data frame.  
+To plot this, `bare_meanplot` needs the mean data a (named) color list. It creates an extremely basic ggplot to which you can add faceting, scaling, etc., as it can take a lot of fine-tuning to get a final plot you are happy with. I'm going to save it, so that I can use it as a base later and add other ggplot layers.
+```{r}
+means.plot <- bare_meanplot(df.means, eightcolors)
+means.plot
+```
+
+This looks terrible! That's because we have multiple conditions all mixed together, and ggplot is trying to put them in one line.
+
+To break up by conditions, use `facet_wrap` or `facet_grid`.
+```{r}
+means.plot + facet_wrap(condition~.)
+```
+Note that the colors stayed consistant with my first plots, and the order changed. To get fancy, I'd like to trim my x-axis and re-label the faceting variable.  
+To display names other than what is in the conditions variable, we'll use a trick similar to the named color vectors, and make a named list of labels. Because we'll feed them into ggplot's labelling functions, you can use special notation (with `label_wrap_gen`) or plotmath notation (with `label_parsed`) to get italics, sub/superscripts, and symbols. (Google will be your best friend here. As it always is with all coding.) We will use a much messier version later, too.  
+The list assigned to the `names` call must match the values in the `condition` variable. Again, make sure that the order of the lists match each other (they don't necessarily have to match the display order).
+```{r}
+conds.labels <- c("RKS Buffer\nRKS Ions", "RKS Buffer\nCSH Ions", "CSH Buffer\nRKS Ions", "CSH Buffer\nCSH Ions")
+names(conds.labels) <- c("RKS", "RKS_mod", "CSH_mod", "CSH")
+```
+
+OK, for the plot:
+```{r}
+means.plot +
+  scale_x_continuous(limits = c(10, 40)) +
+  facet_wrap(condition~., labeller = as_labeller(conds.labels, label_wrap_gen(width = 12)))
+```
+
+Warnings about removed rows stem from the fact that I have essentially censored the data, i.e. it is confused that there are rows with values that are not being displayed.  
+For more options and help tweaking the plots, I really like STDHA's tutorials that pop up in Google search results for "ggplot2 + ______", like "change axis ticks" or "title". I tried to keep what I declared minimal, so that ggplot would not get angry about things gettting rewritten; but, if it causes problems, you can modify either a copy the body of the code for the `bare_meanplot` or the script itself.
+
+#### Other groupings
+Just as an example, let's say I wanted to seach the averages of each plate (instead of letting them average together.) We'll use `mean_OD` again, but with another grouping variable.
+```{r}
+df.plateMeans <- mean_OD(df, c("time", "strain", "condition", "plate"))
+```
+
+Now we'll plot in a grid, with the conditions as columns, and plates as rows. (Because the facet labels don't include values for the plates, I had to modfiy the labeller call to specifically say, "Only apply this function to the `condition` variables." If I could either append more values onto the named labels, or create another named list of labels and add a second item in that call `labeller = labeller(condition = ..., plate = ...)`)
+```{r}
+bare_meanplot(df.plateMeans, eightcolors) +
+  scale_x_continuous(limits = c(10, 40)) +
+  scale_y_continuous(limits = c(0, 1.3)) +
+  facet_grid(plate ~ condition, labeller = labeller(condition = as_labeller(conds.labels, label_wrap_gen(width = 12))))
+```
+
+### Additional Condition/Independent Variables
+In this specific experiment, I actually have two condition factors (Ion and Buffer recipe/levels) that I've currently been treating as one condition factor. (And will still also use as an example later.) When it comes time for the stat analysis, I'd like to be able to control and compare using these. As might be obvious frome the condition labels, each `condition` value dictates the values of two other factors I'd like to be able to analyze: Buffer and Ions.   
+
+To add extra variable columns, we'll use:
+
+* piping `%>%` to continuously modify the data frame `df`, by passing it through functions that then "return" a modified `df` to hand off
+* `mutate` to create a new column/variable and assign it values at each row
+* `case_when` to conditionally assign values to this new variable based on the values in other columns/variables for that row
+  + There is an item for each case we want to consider, demarcated by a comma
+  + The left side of the case (before the tilde `~`) is the case we're checking for. This should evaluate to a boolean (TRUE/FALSE).
+  + The right side of the case (after the `~`) is the value to put store in the variable at that row. Here we have character strings.
+  + R will go through each row of the data frame, and check for each case in order, until it finds a true evaluation. It then assigns the corresponding value to the new variable, and moves to the next row. (No later conditions will be checked.)
+* `grepl` to find which the values we want. Because of how I named these conditions, I need to search for any instances of "RKS" or "CSH" in the `condition` variable, regardless of whether they are by themselves, or part of a larger string. (Note, I could just have repeated what I did for the `Ions` variable up in the `Buffer` part, and written out each case explicitly, but I let R do the legwork for me.)
+* `factor` to turn each variable into a factor, with a specific ordering. (This is how the `format_GC` function works.)
+
+```{r}
+dfExtended <- df %>% mutate(
+  Buffer = case_when(grepl("RKS", condition) ~ "RKS",
+                     grepl("CSH", condition) ~ "CSH"),
+  Ions = case_when(condition == "RKS" ~ "RKS",
+                   condition == "RKS_mod" ~ "CSH",
+                   condition == "CSH" ~ "CSH",
+                   condition == "CSH_mod" ~ "RKS")
+  ) %>%
+  mutate(
+    Buffer = factor(Buffer, levels = c("RKS", "CSH"), ordered = TRUE),
+    Ions = factor(Ions, levels = c("RKS", "CSH"), ordered = TRUE)
+  )
+```
+
+
+# Extracting Measurements
+
+# Analysis
+
+https://cran.r-project.org/web/packages/growthrates/vignettes/Introduction.html
+
+## Across all samples, within a conition. (For all conditions.)
+
+## Across all conditions, within a sample. (For all samples.)
+
+#
