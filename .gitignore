@@ -47,3 +47,4 @@ po/*~
 # Created files
 parsed/
 testplot.pdf
+*.nb.html
