@@ -49,6 +49,7 @@ library(grid) # I think this is uncessary.
 library(gtable) # I think ggplot already loads this.
 ```
 
+
 As a general tip: the "Environment" tab in the upper right corner of RStudio can be really nice to quickly see what stored objects you have, and what is stored in them by clicking on the blue arrow (to get a drop down summary of structure and conents) or their name (to pop open a new tab, where you can see all of the contents and hover over the column names to see data type.) This is great when trying to figure out what exactly a function (or you) did to your data.
 # The Data
 
@@ -76,6 +77,7 @@ For the Tecan Spark, if you are using timing other than reads every 10 minutes o
 Both functions expect:  
 
 1. The data file with a path.  (e.g. "C:\My Documents\GC\plate1.xlsx")
+   +
 2. The template file with a path.  
 3. What format you want the output data in (options are "R", "prism", "python"). This mostly affects how it formats the time column.
 4. Whether or not to remove the media blanks.
@@ -132,7 +134,7 @@ names(R1[[3]])
 
 ## Initial look at the data
 
-The `plot_from_melted_plate_facted` and `plot_from_melted_plate` functions are both simple functions, meant to be a fast way to look at each plate. (They can take more than 1 plates-worth of data in one data frame, but formatting and customiazability are limited.) The first returns a single plot faceted by whatever your different conditions are, the second returns 1 plot per condition. Both require you to give them the data frame (no path needed this time), a (named) color vector for coloring by strain, a title in string format, and the type of scaling on the y-axis you would like ("straight", "log2", "log10", "natural_log".)
+The `plot_from_melted_plate_faceted` and `plot_from_melted_plate` functions are both simple functions, meant to be a fast way to look at each plate. (They can take more than 1 plates-worth of data in one data frame, but formatting and customiazability are limited.) The first returns a single plot faceted by whatever your different conditions are, the second returns 1 plot per condition. Both require you to give them the data frame (no path needed this time), a (named) color vector for coloring by strain, a title in string format, and the type of scaling on the y-axis you would like ("straight", "log2", "log10", "natural_log".)
 
 ### Color vectors
 
@@ -244,7 +246,9 @@ This looks terrible! That's because we have multiple conditions all mixed togeth
 
 To break up by conditions, use `facet_wrap` or `facet_grid`.
 ```{r}
-means.plot + facet_wrap(condition~.)
+testplot <- means.plot + facet_wrap(condition~.)
+testplot
+ggsave(here("testplot.pdf"), testplot, height = 8, width = 6)
 ```
 Note that the colors stayed consistant with my first plots, and the order changed. To get fancy, I'd like to trim my x-axis and re-label the faceting variable.  
 To display names other than what is in the conditions variable, we'll use a trick similar to the named color vectors, and make a named list of labels. Because we'll feed them into ggplot's labelling functions, you can use special notation (with `label_wrap_gen`) or plotmath notation (with `label_parsed`) to get italics, sub/superscripts, and symbols. (Google will be your best friend here. As it always is with all coding.) We will use a much messier version later, too.  
@@ -261,7 +265,9 @@ means.plot +
   facet_wrap(condition~., labeller = as_labeller(conds.labels, label_wrap_gen(width = 12)))
 ```
 
-Warnings about removed rows stem from the fact that I have essentially censored the data, i.e. it is confused that there are rows with values that are not being displayed.  
+Warnings about removed rows stem from the fact that I have essentially censored the data, i.e. it is confused that there are rows with values that are not being displayed.
+
+#### More options for ggplot2
 For more options and help tweaking the plots, I really like STDHA's tutorials that pop up in Google search results for "ggplot2 + ______", like "change axis ticks" or "title". I tried to keep what I declared minimal, so that ggplot would not get angry about things gettting rewritten; but, if it causes problems, you can modify either a copy the body of the code for the `bare_meanplot` or the script itself.
 
 #### Other groupings
@@ -308,15 +314,21 @@ dfExtended <- df %>% mutate(
   )
 ```
 
+More plot options
 
 # Extracting Measurements
 
-# Analysis
-
 https://cran.r-project.org/web/packages/growthrates/vignettes/Introduction.html
 
-## Across all samples, within a conition. (For all conditions.)
+# Analysis
+
+General anova first.
+
+## Across all samples, within a condition. (For all conditions.)
 
 ## Across all conditions, within a sample. (For all samples.)
 
-#
+```{r}
+```
+
+## Plotting
