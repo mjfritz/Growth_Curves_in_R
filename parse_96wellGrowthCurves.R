@@ -159,16 +159,18 @@ parse_growth_VersaMax_xlsx <- function(datawithpath, templatewithpath, output = 
   df <- read.xlsx(datawithpath,
                   startRow = 3,
                   skipEmptyCols = TRUE,
-                  rowNames = FALSE, colNames = TRUE, check.names = TRUE) %>% drop_na()
+                  rowNames = FALSE, colNames = TRUE, check.names = TRUE) %>%
+    rename("temp" = 'Temperature..C.') %>%
+    filter(!is.na(temp))
   
   # The time formats are really funky. For time <24 hours, it's in a decimal format. For Time >= 24, it's in a hybrid "day.hour:minutes:seconds" format.
   firsthalf <- df[!(grepl("\\:", df$Time)), ] %>%
     mutate(time = round(as.numeric(Time)*24, 2)) %>%
-    relocate(time) %>% select(-c(Time, 'Temperature..C.'))
+    relocate(time) %>% select(-c(Time, temp))
   secondhalf <- df[grepl("\\:", df$Time), ] %>%
     separate(Time, into = c("days", "hours", "minutes", "seconds"), sep = "[.:]", convert = TRUE, fill = "left") %>%
     mutate(time = round(days*24 + hours + minutes/60 + seconds/(60*60), 2)) %>%
-    relocate(time) %>% select(-c('Temperature..C.', days, hours, minutes, seconds))
+    relocate(time) %>% select(-c(temp, days, hours, minutes, seconds))
   
   # Combine and assign sample names
   gd <- bind_rows(firsthalf, secondhalf) %>% arrange(time)
