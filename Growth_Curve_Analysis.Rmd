@@ -8,6 +8,7 @@ output:
 These are steps I take to analyze the TilS growth curves. Some things in the parse_96wellGrowthCurves.R script are specific to the 48-hour curves I run, but I tried to make the other parts more general. So, you might need to tailor that script to match what the different plate readers give you.
 
 The basics steps however are:
+
 1. Run a growth curve on either the VersaMax or Tecan Spark readers.
 2. Create a plate template that defines what samples and coniditions are in which wells.
 3. Read in the plate(s) and template(s) to R.
@@ -17,36 +18,56 @@ The basics steps however are:
 7. Do a statistical comparison of the measures.
 8. Plot results.
 
-This requires some familiarity with R, but hopefully not too much, plus a little understanding of ggplot2. (Also, I am a bit of a novice to coding, so there are definitely multiple ways of accomplishing similar goals. Some much more elegant than these. But I don't know them yet.)
+This requires some familiarity with R, but hopefully not too much, plus a little understanding of ggplot2. I strongly encourage you to:  
+
+1. Use RStudio
+2. Create a new project folder (or use an existing folder) to contain all files related to your project. This will be your working directory.
+3. Create an R-Notebook (which can be saved in the base directory, or in a sub-folder, useful for when you have more than one notebook but in the same project).
+4. And to copy/paste, modify, and run each bit of code in separate code blocks to.
+
+This will track exactly what lines of code your ran (which leave out what you did not), as well Document your analysis and save your results together, as if in a lab notebook. (See [this resource](https://bookdown.org/yihui/rmarkdown/notebook.html) for more in depth help with notebooks.) Using the code chunks in a notebook will also help with troubleshooting, as the pipeline will be broken up.
+
+For general R help: [R for Data Science](https://r4ds.had.co.nz/), Google, stackoverflow, and any results from STDHA and datanovia are very helpful. Searching for the exact wording of an error, or just what you're trying to accomplish in general can typically generate good results. I also like to use the "Environment" pane in RStudio to see what variables I have in use. Clicking on their names will also allow you to vew them in matrix format, where you can hover over column names for data type info. This is often helpful for debugging.
+
+(Also, I am a bit of a novice to coding, so there are definitely multiple ways of accomplishing similar goals. Some much more elegant than these. But I don't know them yet.)
 
 ## Dependecies
-These packages are what I run. Some of them are not entirely necessary, but make plotting easier/nicer. I have marked them. The order of loading can also matter.
+To start, these scripts rely on packages you may need to install (download) and then load (kind of like attaching.) You may have tons of packages installed, but only need to load the ones that you will be using for a certain analysis. (You do need to keep in mind that you need to load the packages each time you open RStudio, if you stop mid analysis.)
+
+Most packages are stored in respository that R can access easily. Typing `install.packages(` and then starting to type the name of the package may autofill what you want. If it doesn't, enter the name in quotations. RStudio may ask you to pick a mirror site, typically choosing one geographically close is fastest. (If it is not available on the CRAN repositories, visit that packages website/git page. There should be installation instructions.)
+
+These packages are what I run. Some of them are not entirely necessary, but I use in this tutorial and make things easier/nicer. I have marked them. (To not load them, comment that line of code out with `Ctrl+Shift+C` when on that line, or while highlighting multiple lines.)
 ```{r}
 library(rstatix)
 library(openxlsx)
-library(plyr)
 library(janitor)
-library(tidyr)
 library(reshape2)
-library(ggplot2)
-library(ggrepel) # Not necessary
-library(ggpubr)
-library(growthcurver)
-library(RColorBrewer) # Not necessary
+library(inauguration)
+library(paletteer) # Not necessary
 library(scales) # Not entirely necessary
+library(RColorBrewer) # Not necessary
 library(emmeans)
 library(multcomp)
 library(multcompView)
 library(DescTools)
-library(paletteer) # Not necessary
-library(dplyr)
-library(tidyverse)
 library(growthrates)
+library(tidyverse)
 library(here) # Not necessary, just what I use to make pathing things easier, and only dependent on project sub-folders.
-library(inauguration)
 source(here("parse_96wellGrowthCurves.R")) # This is the script I wrote, just make sure to path to wherever you keep it.
-library(grid) # I think this is uncessary.
-library(gtable) # I think ggplot already loads this.
+```
+You should see a bunch of red text, some of which will talk about objects being masked form packages. The order of loading packages can matter, as the last package to load that uses a shared object name, is the one that gets to use that name by default.  
+
+The last line should be a call that tells you the folder where the `here` package is rooting all of your paths out from. Now, whenever you use a line like `here("a folder", "a file.pdf")`, the function will look for "a file.pdf" in the "a folder" sub-folder of the base directory. (Typically the base directory is automatically set as the project folder that contains the ".proj" file.) In these examples, I've used the `here` package to create semi-nonspecfic directions to the file (which is useful for when your project folders move around, but the R-notebook and the files stay together. It assumes that the data structure within a project folder stays the same.) The `here` function also removes system-specific jargon (Windows use \ instead of / in filing, unlike other OSs.)
+
+(As a note, the `here` function name is used by multiple packages, so sometimes you'll think you are using `here` from the `here` package, but you are using the function from another, say `stats`. If a line of code is giving you problems contains a `here()`, try putting in place `here::here()` which tells R to specifically go to the `here` package and use that version of the function. If we instead wanted the stats version, we would use `stats::here()` to override whatever R is defaulting on.)
+
+
+These ar packages that are helpful in making great plots, but not necessary for this tutorial (and so have been commented out.)
+```{r}
+# library(ggrepel) # Not necessary
+# library(ggpubr)
+# library(grid) # I think this is uncessary.
+# library(gtable) # I think ggplot already loads this.
 ```
 
 
@@ -56,13 +77,24 @@ As a general tip: the "Environment" tab in the upper right corner of RStudio can
 These scripts require that you have two things for each plate:
 
 1. An xlsx file from the plate reader. (For xls files, just open in Excel and resave as an xlsx.)
-2. A plate template that has columns for well name, strain/genotype, condition, replicate (within the plate), and plate name (helpful when run in a series)
-   + Empty wells should have "blank" as their sample name.
-   + The way the code is written (and to make your life easier later), *do not use periods or dots in your names* for strain, condition, etc. Hypens and underscores are OK. Some of the formatting tricks rely on the dots as delimitters between items.
-   + To save you time later in plotting, it can be useful to use spaces and capitalization as you would like to see in your labels. **This is typically a terrible idea for programming.** R seems to do OK with it though (as long as you use double quotes for variable values "tilS N274Y", and single apostrophes for variable names 'Time Elapsed').
+2. A plate template that matches each well with a sample and other specifics. (see plate_template.xlsx for a blank copy to fill-in.)
 
-For the tempalte, I use plate_template.xlsx. I keep a clean one, and then make a new one for each plate. (In the process of filling them out, I resort the columns to speed up numbering replicates. BUT because I kept well names as one unit (A12 verus row A column 12), Excel has trouble re-ordering them.) When running a series of plates, keep the naming (including capitalization) of strains and conditions the same between them. It can also be helpful to name the plates themselves sequentially with the experiment name rather than just with a date.  
+The template spread sheet must have columns named `Well_ID`, `Strain`, `Condition`, `Replicate` (within the plate), and `Plate` (helpful when multiple plates will be run in a series). There are also requirements for what you fill-in:
 
+* Empty wells should have "blank" as their sample name.
+* When running a series of plates, keep the naming (including capitalization) of strains and conditions the same between them.
+* The way the code is written (and to make your life easier later), *do not use periods/dots or other special characters* for strain, condition, etc. Hyphens and underscores are OK, (underscores are "traditionally" used in place of spaces.) While periods/dots are typically fine, some of the formatting tricks in my code rely on the as delimitters between items.
+* If you have multiple biological replicates and technical replicates on a plate, use a hypenated system to denote both in the `Replicate` column, i.e. "C-2" would be for technical replicate 2 of biolgoical replicate C for a specific sample.
+* The `Plate` entries should be identical the entire way down the plate, and each plate should have its own template. (In theory you could use the same template file, and then change the plate name for each data frame individually.)
+
+I keep a clean plate_template.xlsx, and then make a new copy to fill-in for each plate. (In the process of filling them out, I resort the columns to speed up numbering replicates. BUT resorting them into the A1-A12 format is difficult for Excel.)  
+
+The specifics of how you word items can help you out later on. For example:
+
+* If you have multiple independent condition variables, label them with systematic combinations of conditions separated by hyphens or underscores. If I ran a plate varying both antibiotic concentrations and media, I would fill in the condition column with a consistent hyphenated combination of the two, like "0ug-LB" and "2ug-M9". This way, these details can be automatically recovered later on using a simple `separate` command.
+* It can also be helpful to name the plates themselves sequentially with the experiment name rather than just with a date.
+* To save you time later in plotting, it can be useful to use spaces and capitalization as you would like to see in your labels. **This is typically a terrible idea for programming.** R seems to do OK with it though (as long as you use double quotes for variable values "tilS N274Y", and single apostrophes for variable names 'Time Elapsed').
+  
 
 ## Reading in Data
 
@@ -77,7 +109,7 @@ For the Tecan Spark, if you are using timing other than reads every 10 minutes o
 Both functions expect:  
 
 1. The data file with a path.  (e.g. "C:\My Documents\GC\plate1.xlsx")
-   +
+   + `here()` Explanation
 2. The template file with a path.  
 3. What format you want the output data in (options are "R", "prism", "python"). This mostly affects how it formats the time column.
 4. Whether or not to remove the media blanks.
@@ -85,6 +117,7 @@ Both functions expect:
    + After modification, you'll need to read save the `parse_96wellGrowthCurves.R` file, and re-run `source(here...)` line to load the changes.
 5. A folder where it will write a copy of the parsed out data as an xlsx file. It will create the folder if it does not exist already.
 
+Here I'm loading 5 different plates, all from the same series.
 ```{r}
 R1 <- parse_growth_Spark(datawithpath = here("data", "1-10-2021_RKS-swap1.xlsx"),
                          templatewithpath = here("data", "1-10-2021_plate_template.xlsx"),
@@ -107,7 +140,6 @@ R3 <- parse_growth_Spark(here("data", "1-24-2021_RKS-swap3.xlsx"),
                          "R", remove_emptys = TRUE, outputfoldername = "parsed")
 
 ```
-In these examples, I've used the `here` package to create semi-nonspecfic directions to the file (which is useful for when your project folders move around, but the R-notebook and the files stay together. It assumes that the data structure within a project folder stays the same.) The `here` function also removes system-specific jargon (Windows use \ instead of / in filing, unlike other OSs.)
 
 These functions will give each replicate its own `sample_name` of the format `[strain].[condition].[platename].[replicate number on plate]`, and then return the following data frames (as a list):
 

@@ -1,10 +1,10 @@
 #This was formerlly titled parse_SparkControl.R . That file still exists, but is now not updated.
 # Depends on openxlsx, dplyr, scales for log transformations and the here package for file pathing.
-library(openxlsx)
-library(tidyverse)
-library(dplyr)
-library(scales)
-library(here)
+# library(openxlsx)
+# library(tidyverse)
+# library(dplyr)
+# library(scales)
+# library(here)
 
 # To setup for this, fill in the plate_template.xlsx table and save it to correlate to the plate.
 # It has columns for well ID (first) in letterNumber format (ex, B11 for Row 2/B, column 11 on the plate),
@@ -124,7 +124,7 @@ parse_growth_Spark <- function(datawithpath, templatewithpath, output = c("pytho
   # Creating a melted data frame for graphing
   mp <- melt_plate(gd)
 
-  dir.create(here(outputfoldername), showWarnings = FALSE)
+  dir.create(here::here(outputfoldername), showWarnings = FALSE)
   if (output == "prism"){
     fn <- paste0(gsub(".xlsx", "", basename(datawithpath), fixed = TRUE), "_parsedforPrism.csv")
     fullfn <-here::here(outputfoldername, fn)
@@ -182,20 +182,20 @@ parse_growth_VersaMax_xlsx <- function(datawithpath, templatewithpath, output = 
   mp <- melt_plate(gd)
   
   # save in various formats
-  dir.create(here(outputfoldername), showWarnings = FALSE)
+  dir.create(here::here(outputfoldername), showWarnings = FALSE)
   if (output == "prism"){
     fn <- paste0(gsub(".xlsx", "", basename(datawithpath), fixed = TRUE), "_parsedforPrism.csv")
-    fullfn <-here::here(outputfoldername, fn)
+    fullfn <- here::here(outputfoldername, fn)
     cat("Saving: ", fullfn, "\n")
     write.csv(gd, file = fullfn, row.names = FALSE)
   } else if (output == "python") {
     fn <- paste0(gsub(".xlsx", "", basename(datawithpath), fixed = TRUE), "_parsedforPython.tsv")
-    fullfn <-here::here(outputfoldername, fn)
+    fullfn <- here::here(outputfoldername, fn)
     cat("Saving: ", fullfn, "\n")
     write.table(gd, file = fullfn, sep = "\t", row.names = FALSE)
   } else if (output == "R") {
     fn <- paste0(gsub(".xlsx", "", basename(datawithpath), fixed = TRUE), "_parsedforR.csv")
-    fullfn <-here::here(outputfoldername, fn)
+    fullfn <- here::here(outputfoldername, fn)
     cat("Saving: ", fullfn, "\n")
     write.csv(gd, file = fullfn, row.names = FALSE)
   }
