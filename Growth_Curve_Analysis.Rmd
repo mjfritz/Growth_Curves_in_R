@@ -91,7 +91,7 @@ I keep a clean plate_template.xlsx, and then make a new copy to fill-in for each
 
 The specifics of how you word items can help you out later on. For example:
 
-* If you have multiple independent condition variables, label them with systematic combinations of conditions separated by hyphens or underscores. If I ran a plate varying both antibiotic concentrations and media, I would fill in the condition column with a consistent hyphenated combination of the two, like "0ug-LB" and "2ug-M9". This way, these details can be automatically recovered later on using a simple `separate` command.
+* If you have *multiple independent condition variables*, label them with systematic combinations of conditions separated by hyphens or underscores. If I ran a plate varying both antibiotic concentrations and media, I would fill in the condition column with a consistent hyphenated combination of the two, like "0ug-LB" and "2ug-M9". This way, these details can be automatically recovered later on using a simple `separate` command.
 * It can also be helpful to name the plates themselves sequentially with the experiment name rather than just with a date.
 * To save you time later in plotting, it can be useful to use spaces and capitalization as you would like to see in your labels. **This is typically a terrible idea for programming.** R seems to do OK with it though (as long as you use double quotes for variable values "tilS N274Y", and single apostrophes for variable names 'Time Elapsed').
   
@@ -260,64 +260,17 @@ unique(df$strain)
 unique(df$condition)
 ```
 
-### Plotting the means
-We can also look at quick plot of the means at each time point using `mean_OD` and `bare_meanplot` plot. `mean_OD` just needs the data frame you wish to calculate the mean ODs for, and how you want to group the data. It will return a data frame columns for OD-corrected absorbance, mean, and error stats.  
-Most often for general growth curve representation, we want to group by time, strain, and condition. The grouping variables need to be entered in a list with quotes around each. There is a row each strain/condition combination. (Here 6 strains $\times$ 4 conditions $\times$ 288 time points.)
-```{r}
-df.means <- mean_OD(df, c("time", "strain", "condition"))
-nrow(df.means)
-```
-Note that none of the raw data is in the data frame.  
-To plot this, `bare_meanplot` needs the mean data a (named) color list. It creates an extremely basic ggplot to which you can add faceting, scaling, etc., as it can take a lot of fine-tuning to get a final plot you are happy with. I'm going to save it, so that I can use it as a base later and add other ggplot layers.
-```{r}
-means.plot <- bare_meanplot(df.means, eightcolors)
-means.plot
-```
+This function can only handle formatting one condition variable, however if you have more than one...
 
-This looks terrible! That's because we have multiple conditions all mixed together, and ggplot is trying to put them in one line.
+### Mutliple independent condition variables
 
-To break up by conditions, use `facet_wrap` or `facet_grid`.
-```{r}
-testplot <- means.plot + facet_wrap(condition~.)
-testplot
-ggsave(here("testplot.pdf"), testplot, height = 8, width = 6)
-```
-Note that the colors stayed consistant with my first plots, and the order changed. To get fancy, I'd like to trim my x-axis and re-label the faceting variable.  
-To display names other than what is in the conditions variable, we'll use a trick similar to the named color vectors, and make a named list of labels. Because we'll feed them into ggplot's labelling functions, you can use special notation (with `label_wrap_gen`) or plotmath notation (with `label_parsed`) to get italics, sub/superscripts, and symbols. (Google will be your best friend here. As it always is with all coding.) We will use a much messier version later, too.  
-The list assigned to the `names` call must match the values in the `condition` variable. Again, make sure that the order of the lists match each other (they don't necessarily have to match the display order).
-```{r}
-conds.labels <- c("RKS Buffer\nRKS Ions", "RKS Buffer\nCSH Ions", "CSH Buffer\nRKS Ions", "CSH Buffer\nCSH Ions")
-names(conds.labels) <- c("RKS", "RKS_mod", "CSH_mod", "CSH")
-```
+In this specific experiment, I actually have two condition factors (Ion and Buffer recipe/levels) that I've currently been treating as one condition factor. (And will still also use as an example later.) When it comes time for the stat analysis, I'd like to be able to control and compare using these. As might be obvious frome the condition labels, each `condition` value dictates the values of two other factors I'd like to be able to analyze: Buffer and Ions.
 
-OK, for the plot:
-```{r}
-means.plot +
-  scale_x_continuous(limits = c(10, 40)) +
-  facet_wrap(condition~., labeller = as_labeller(conds.labels, label_wrap_gen(width = 12)))
-```
+Depending on how the `condidtion` variable is structured, you could have two different approaches to extracting the levels/values for each variable: manual-case-by-case assignment or automatic separation of a compound `condition`.
 
-Warnings about removed rows stem from the fact that I have essentially censored the data, i.e. it is confused that there are rows with values that are not being displayed.
+#### Manual assimgment.
 
-#### More options for ggplot2
-For more options and help tweaking the plots, I really like STDHA's tutorials that pop up in Google search results for "ggplot2 + ______", like "change axis ticks" or "title". I tried to keep what I declared minimal, so that ggplot would not get angry about things gettting rewritten; but, if it causes problems, you can modify either a copy the body of the code for the `bare_meanplot` or the script itself.
-
-#### Other groupings
-Just as an example, let's say I wanted to seach the averages of each plate (instead of letting them average together.) We'll use `mean_OD` again, but with another grouping variable.
-```{r}
-df.plateMeans <- mean_OD(df, c("time", "strain", "condition", "plate"))
-```
-
-Now we'll plot in a grid, with the conditions as columns, and plates as rows. (Because the facet labels don't include values for the plates, I had to modfiy the labeller call to specifically say, "Only apply this function to the `condition` variables." If I could either append more values onto the named labels, or create another named list of labels and add a second item in that call `labeller = labeller(condition = ..., plate = ...)`)
-```{r}
-bare_meanplot(df.plateMeans, eightcolors) +
-  scale_x_continuous(limits = c(10, 40)) +
-  scale_y_continuous(limits = c(0, 1.3)) +
-  facet_grid(plate ~ condition, labeller = labeller(condition = as_labeller(conds.labels, label_wrap_gen(width = 12))))
-```
-
-### Additional Condition/Independent Variables
-In this specific experiment, I actually have two condition factors (Ion and Buffer recipe/levels) that I've currently been treating as one condition factor. (And will still also use as an example later.) When it comes time for the stat analysis, I'd like to be able to control and compare using these. As might be obvious frome the condition labels, each `condition` value dictates the values of two other factors I'd like to be able to analyze: Buffer and Ions.   
+Because I did not name my conditions with compound conditions, extracting the two different variables from one `condition` variable will take a little work. The general flow is: for each new variable, examine what is in the original `condition` varaible at each row, and assign a value on a case-by-case basis. The conditions were named after the buffering components of the media, so I assigned `Buffer` using a general serach for the two different buffers. The `Ions` required an individual assigment for each possible value of the `condition` variable. 
 
 To add extra variable columns, we'll use:
 
@@ -346,11 +299,135 @@ dfExtended <- df %>% mutate(
   )
 ```
 
+#### Automatic separation
+
+Compound naming makes this part super easy. The `separate` function takes a column (here `condition'), looks for the separator on which to split the values (here a hyphen), and then stores them sequentially in the new columns you give it (the `into=` parameter with the list of variables). I would let tell it to keep the original column intact (the `remove=` parameter). The function is smart to expect as many pieces as you give it variables. This example expects 2 hyphpens and three chunks of text for each entry in the `condition` column. It will warn you if there are too many or too few pieces. If you know that there will be discrepencies, you can dictact the funcitons behavior with `drop=` and `fill=` arguments respectively (see the `separate` documentation for more help.)
+
+(This part of code is hypothetical)
+```{r, eval = FALSE}
+dfExtended <- df %>% separate(condition, into = c("First Variable", "Second Variable", "Third Variable"),
+                              remove = FALSE,
+                              sep = "-") %>%
+  mutate(
+    Buffer = factor(Buffer, levels = c("RKS", "CSH"), ordered = TRUE),
+    Ions = factor(Ions, levels = c("RKS", "CSH"), ordered = TRUE)
+  )
+```
+
+
+Because using two condition varialbes is just an extension of using one, I will procede through this example with two variables. (Where typically simplifying down to one means just deleting the second variable.)
+
+### Plotting the means
+We can also look at quick plot of the means at each time point using `mean_OD` and `bare_meanplot` plot. `mean_OD` just needs the data frame you wish to calculate the mean ODs for, and how you want to group the data. It will return a data frame columns for OD-corrected absorbance, mean, and error stats.  
+Most often for general growth curve representation, we want to group by time, strain, and condition. The grouping variables need to be entered in a list with quotes around each. There is a row each strain/condition combination. (Here 6 strains $\times$ 4 conditions $\times$ 288 time points.)
+```{r}
+df.means <- mean_OD(dfExtended, c("time", "strain", "Buffer", "Ions"))
+nrow(df.means)
+```
+Note that none of the raw data is in the data frame.  
+To plot this, `bare_meanplot` needs the mean data a (named) color list. It creates an extremely basic ggplot to which you can add faceting, scaling, etc., as it can take a lot of fine-tuning to get a final plot you are happy with. I'm going to store it in a variable, so that I can use it as a base later and add other ggplot layers.
+```{r}
+means.plot <- bare_meanplot(df.means, eightcolors)
+means.plot
+```
+
+This looks terrible! That's because we have multiple conditions all mixed together, and ggplot is trying to put them in one line.
+
+To break up by conditions, use `facet_wrap` or `facet_grid`. Here I'm also using a `ggsave` to save a copy of the plot as a pdf (the function will adjust appropriately by you just changing the extension  of the file name) with modified dimensions.
+```{r}
+testplot <- means.plot + facet_wrap(Buffer + Ions ~ .)
+testplot
+ggsave(here("testplot.pdf"), testplot, height = 8, width = 6)
+```
+
+Note that the colors stayed consistant with my first plots, and the order changed.
+
+To get fancy, I'd like to trim my x-axis and re-label the faceting variable by both the variable and its value.
+```{r}
+means.plot +
+  scale_x_continuous(limits = c(10, 40)) +
+  facet_wrap( Buffer + Ions ~ . , labeller = label_both)
+```
+
+
+
+#### For single varaible conditions (and vurther examples of labeling)
+
+Returning again to the single varialbe `condition`, to display names other than what is in the conditions variable, we'll use a trick similar to the named color vectors, and make a named list of labels. Because we'll feed them into ggplot's labelling functions, you can use special notation (with `label_wrap_gen`) or plotmath notation (with `label_parsed`) to get italics, sub/superscripts, and symbols. (Google will be your best friend here. As it always is with all coding.) We will use a much messier version later, too.  
+The list assigned to the `names` call must match the values in the `condition` variable. Again, make sure that the order of the lists match each other (they don't necessarily have to match the display order).
+```{r}
+conds.labels <- c("RKS Buffer\nRKS Ions", "RKS Buffer\nCSH Ions", "CSH Buffer\nRKS Ions", "CSH Buffer\nCSH Ions")
+names(conds.labels) <- c("RKS", "RKS_mod", "CSH_mod", "CSH")
+```
+
+OK, for the plot (event though the means are the same as before, the `condition` varaible as not included before, so we're simplying to make another (almost idential) dataframe):
+```{r}
+df.means.single <- mean_OD(dfExtended, c("time", "strain", "condition"))
+means.plot.single <- bare_meanplot(df.means.single, eightcolors)
+means.plot.single +
+  scale_x_continuous(limits = c(10, 40)) +
+  facet_wrap(condition~., labeller = as_labeller(conds.labels, label_wrap_gen(width = 12)))
+```
+
+Warnings about removed rows stem from the fact that I have essentially censored the data, i.e. it is confused that there are rows with values that are not being displayed.
+
+#### More options for ggplot2
+For more options and help tweaking the plots, I really like STDHA's tutorials that pop up in Google search results for "ggplot2 + ______", like "change axis ticks" or "title". I tried to keep what I declared minimal, so that ggplot would not get angry about things gettting rewritten; but, if it causes problems, you can modify either a copy the body of the code for the `bare_meanplot` or the script itself.
+
+#### Other groupings
+Just as an example, let's say I wanted to seach the averages of each plate (instead of letting them average together.) We'll use `mean_OD` again, but with another grouping variable.
+```{r}
+df.plateMeans <- mean_OD(dfExtended, c("time", "strain", "Buffer", "Ions", "plate"))
+```
+
+Now we'll plot in a grid, with the conditions as columns, and plates as rows. (Because the facet labels don't include values for the plates, I had to modfiy the labeller call to specifically say, "Only apply this function to the `condition` variables." If I could either append more values onto the named labels, or create another named list of labels and add a second item in that call `labeller = labeller(Ions = ..., plate = ...)`)
+```{r}
+bare_meanplot(df.plateMeans, eightcolors) +
+  scale_x_continuous(limits = c(10, 40)) +
+  scale_y_continuous(limits = c(0, 1.3)) +
+  facet_grid(plate ~ Buffer + Ions, labeller = labeller(Ions = label_both, Buffer = label_both))
+```
+
+
 More plot options
 
 # Extracting Measurements
 
-https://cran.r-project.org/web/packages/growthrates/vignettes/Introduction.html
+
+
+This part relies heavily on the `growthrates` package, with a helpful tutorial [here](https://cran.r-project.org/web/packages/growthrates/vignettes/Introduction.html). Explanations of their different functions and the models they use.
+
+All of them will need a data frame with base-line removed absorbance data, but no negative values.
+
+To begin, growth rates gives you two groups of options for models to fit with different pros and cons: simpler "easy linear" and "smoothing splines" or the more complex parametric non-linear models.
+
+
+## Easy linear and smoothing splines
+
+The easiest to fit, but which give the least info are the "easy linear" and "simple splines". They require minimal input and take the shortest amount of time to run (although than can be several minutes, depending on the number of plates-worth of data that you are analyzing.) The only information you get from these are v-max (maximum early log-linear growth rate, written as `mumax` for the Greek letter *mu*, shorthand for growth rate), lag, and the y-intercept (which we know should be around 0).
+
+The function itself returns the *fit* and not the parameters or a table, which can take a little getting used to.
+```{r}
+rates.easy <- all_easylinear(OD ~ time | sample_name,
+                                  data = dfExtended, grouping = strain, spar = 0.5, time = "time", y = "OD")
+```
+
+You can see each of the fits. This gets its own line because it's large.
+```{r}
+plot(rates.easy)
+```
+
+The coefficients themselves can be extracted from the fits with `coef`, though for some reason it needs to be coaxed into being a dataframe.
+```{r}
+rates.easy.coef <- as.data.frame(coef(rates.easy)) %>% rownames_to_column(var = "sample_name")
+```
+
+## Parametric non-linear
+
+These curves fit the full logistic growth model to each curve, meaning that they return carrying capacity in addition to v-max and lag. 
+
+
+
 
 # Analysis
 
