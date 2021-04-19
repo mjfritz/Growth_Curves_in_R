@@ -5,12 +5,12 @@ output:
     df_print: paged
 ---
 # Overview
-These are steps I take to analyze the TilS growth curves. Some things in the parse_96wellGrowthCurves.R script are specific to the 48-hour curves I run, but I tried to make the other parts more general. So, you might need to tailor that script to match what the different plate readers give you.
+These are steps I take to analyze the TilS growth curves. Some things in the parse_96wellGrowthCurves.R script are specific to the 48-hour curves I run, but I tried to make the other parts more general. So, you might need to tailor that script to match what the different plate readers give you, if you adjust the run-times.
 
 The basics steps however are:
 
 1. Run a growth curve on either the VersaMax or Tecan Spark readers.
-2. Create a plate template that defines what samples and coniditions are in which wells.
+2. Create a plate template that defines what samples and coniditions are in which wells, with specific columns and naming conventions (see later).
 3. Read in the plate(s) and template(s) to R.
 4. Format and combine data frames.
 5. Calculate the average absorbance readings and plot general growth curves.
@@ -21,9 +21,9 @@ The basics steps however are:
 This requires some familiarity with R, but hopefully not too much, plus a little understanding of ggplot2. I strongly encourage you to:  
 
 1. Use RStudio
-2. Create a new project folder (or use an existing folder) to contain all files related to your project. This will be your working directory.
+2. Create a new project folder (or use an existing folder) to contain all files related to your project (including multiple plates, if you have them.) This will be your working directory.
 3. Create an R-Notebook (which can be saved in the base directory, or in a sub-folder, useful for when you have more than one notebook but in the same project).
-4. And to copy/paste, modify, and run each bit of code in separate code blocks to.
+4. And to copy/paste, modify, and run each bit of code in separate code blocks to, while making notes about your analysis as you go.
 
 This will track exactly what lines of code your ran (which leave out what you did not), as well Document your analysis and save your results together, as if in a lab notebook. (See [this resource](https://bookdown.org/yihui/rmarkdown/notebook.html) for more in depth help with notebooks.) Using the code chunks in a notebook will also help with troubleshooting, as the pipeline will be broken up.
 
@@ -33,11 +33,13 @@ For general R help: [R for Data Science](https://r4ds.had.co.nz/), Google, stack
 
 ## Dependecies
 
-**installing stuff**
+These scripts rely on pieces of code that other smart individuals have created. R, and many other programming languages, have allow you to modularly add-on that code needed.
 
-To start, these scripts rely on packages you may need to install (download) and then load (kind of like attaching.) You may have tons of packages installed, but only need to load the ones that you will be using for a certain analysis. (You do need to keep in mind that you need to load the packages each time you open RStudio, if you stop mid analysis.)
+But first you need to download (install) them, and then load them (kind of like attaching.)
 
-Most packages are stored in respository that R can access easily. Typing `install.packages(` and then starting to type the name of the package may autofill what you want. If it doesn't, enter the name in quotations. RStudio may ask you to pick a mirror site, typically choosing one geographically close is fastest. (If it is not available on the CRAN repositories, visit that packages website/git page. There should be installation instructions.)
+You may have tons of packages installed, but only need to load the ones that you will be using for a certain analysis. (You do need to keep in mind that you need to load the packages each time you open RStudio as well, if you stop mid analysis.)
+
+Most packages are stored in an online respository that R can access easily (called CRAN). Typing `install.packages(` and then starting to type the name of the package may autofill what you want. If it doesn't, enter the name in quotations. RStudio may ask you to pick a mirror site, typically choosing one geographically close is fastest. (If it is not available on the CRAN repositories, visit that packages website/git page. There should be installation instructions.)
 
 These packages are what I run. Some of them are not entirely necessary, but I use in this tutorial and make things easier/nicer. I have marked them. (To not load them, comment that line of code out with `Ctrl+Shift+C` when on that line, or while highlighting multiple lines.)
 ```{r}
@@ -45,7 +47,6 @@ library(rstatix)
 library(openxlsx)
 library(janitor)
 library(reshape2)
-library(inauguration) # Note to me, take this out!
 library(paletteer) # Not necessary
 library(scales) # Not entirely necessary
 library(RColorBrewer) # Not necessary
@@ -114,13 +115,13 @@ Both functions expect:
 1. The data file with a path.  (e.g. "C:\My Documents\GC\plate1.xlsx")
    + `here()` Explanation
 2. The template file with a path.  
-3. What format you want the output data in (options are "R", "prism", "python"). This mostly affects how it formats the time column.
+3. What format you want the output data in (options are "R", "prism", "python"). This mostly affects how it formats the time column. This is useful if you only intend to use this to automate formatting before moving into Prism.
 4. Whether or not to remove the media blanks.
    + If you inoculated with enough cells to affect the OD *and* you don't wish to use this value as the baseline, make this parameter `FALSE`. You will want to then want to modify the `format_GC` function in the R script itself. See the comments in that section for help.
    + After modification, you'll need to read save the `parse_96wellGrowthCurves.R` file, and re-run `source(here...)` line to load the changes.
-5. A folder where it will write a copy of the parsed out data as an xlsx file. It will create the folder if it does not exist already.
+5. A folder where it will write a copy of the parsed out data as csv file. It will create the folder if it does not exist already.
 
-Here I'm loading 5 different plates, all from the same series.
+Here I'm loading 5 different plates, all from the same series. (The R and C naming is to help me remember what each experiment was. Name these according to what helps you.)
 ```{r}
 R1 <- parse_growth_Spark(datawithpath = here("data", "1-10-2021_RKS-swap1.xlsx"),
                          templatewithpath = here("data", "1-10-2021_plate_template.xlsx"),
@@ -143,14 +144,17 @@ R3 <- parse_growth_Spark(here("data", "1-24-2021_RKS-swap3.xlsx"),
                          "R", remove_emptys = TRUE, outputfoldername = "parsed")
 
 ```
+These functions don't return a single dataframe (or matrix/spreadsheet0), but rather a _list_ of 3 of them. Within these dataframes, the data has been formated to give each replicate its own `sample_name` of the format `[strain].[condition].[platename].[replicate number on plate]`.
 
-These functions will give each replicate its own `sample_name` of the format `[strain].[condition].[platename].[replicate number on plate]`, and then return the following data frames (as a list):
+To access a single item from a list, you use `listname[[itemnumber]]` to access it (i.e. the fourth item in a list called `mylist` would be called as `mylist[[4]]`.
 
-1. The data as a data frame with each well as its own column, which can be useful to prep for other packages, and a row for each time point.
+So, the `parse_growth_` functions have returned a list of 3 dataframes, and stored them in the variable written to the left of the arrow. These dataframes are:  
+
+1. The data as a data frame with each well as its own column (which can be useful to prep for other packages) and a row for each time point.
 
 ```{r}
-names(R1[[1]])
-nrow(R1[[1]])
+names(R1[[1]]) # lists the column names of the first data frame in R1
+nrow(R1[[1]]) # counts the number of rows in this data frame
 ```
 
 2. A "melted" or "long" format, that is useful for plotting and combining. Here column names do not depend on sample names. The total length is much longer, specifically 54 times longer = 6 (number of strains) $\times$ 3 (number of conditions) $\times$ 3 (number of replicates of each sample).
@@ -420,15 +424,32 @@ All of them will need a data frame with base-line removed absorbance data, but n
 
 To begin, growth rates gives you two groups of options for models to fit with different pros and cons: simpler "easy linear" and "smoothing splines" or the more complex parametric non-linear models.
 
+## Removing Box effects
 
-## Easy linear and smoothing splines
+It's a good idea to have a cut-off time, beyond which you will ignore the data. This typically affects ODs after the cultures reach stationary phase, as dips, sudden take-offs, and erratic readings can throw off the fitting or not necessarily be representative of what the population is doing/more an artifact of growth in a 96-well plate.
+
+This could be difficult to set if your strains reach stationary phase at different times, and should be evaluated per exeriment.
+
+For the example purposes, I'm going to set the cutoff time to be 36 hous: some have defintely reached stationary, while others are just approaching.
+
+```{r}
+dfExtended.trim <- filter(dfExtended, time <= 36)
+```
+
+## Fitting Growth Curves and Extracting Parameters
+
+For these to work, we're not going to look at base-line corrected values; some of the fitting functions use logarithmic transformations and 0-values cause problems.
+
+As a note, the fitting can take several minutes, so don't be alarmed if Rstudio appears to be stuck evaluating. 
+
+### Easy linear and smoothing splines
 
 The easiest to fit, but which give the least info are the "easy linear" and "simple splines". They require minimal input and take the shortest amount of time to run (although than can be several minutes, depending on the number of plates-worth of data that you are analyzing.) The only information you get from these are v-max (maximum early log-linear growth rate, written as `mumax` for the Greek letter *mu*, shorthand for growth rate), lag, and the y-intercept (which we know should be around 0).
 
 The function itself returns the *fit* and not the parameters or a table, which can take a little getting used to.
 ```{r}
 rates.easy <- all_easylinear(OD ~ time | sample_name,
-                                  data = dfExtended, grouping = strain, spar = 0.5, time = "time", y = "OD")
+                                  data = dfExtended.trim, grouping = strain, spar = 0.5, time = "time", y = "OD")
 ```
 
 You can see each of the fits. This gets its own line because it's large.
@@ -436,16 +457,58 @@ You can see each of the fits. This gets its own line because it's large.
 plot(rates.easy)
 ```
 
-The coefficients themselves can be extracted from the fits with `coef`, though for some reason it needs to be coaxed into being a dataframe.
+The coefficients themselves and the r-squared, "goodness of fit" estimation can be extracted from the fits with `results` from the `growthrates` package.
 ```{r}
-rates.easy.coef <- as.data.frame(coef(rates.easy)) %>% rownames_to_column(var = "sample_name")
+rates.easy.coef <- results(rates.easy)
 ```
 
-## Parametric non-linear
+### Parametric non-linear
 
-These curves fit the full logistic growth model to each curve, meaning that they return carrying capacity in addition to v-max and lag. 
+These curves fit the full Gompertz growth model to each curve, meaning that they return carrying capacity in addition to v-max and lag. (There are other models that you can fit, see the `growthrates` documentation of `growthmodel` for more options.)
 
+Three-parameter Gompertz equation
+y0 = initial value
+mumax = maximum growth rate
+K = carrying capacity
+lambda = lag time in hours
 
+Because of how numerical fitting works, we have to give the function starting estimates of what we think each parameter should be, and also constraints on the parameters of what is unreasonable. If you see numbers that are bumping up against your limits, try tweaking the other intial parameters.
+
+We are also going to fit this
+
+(Note that this example chooses to fit log transformed data, which tends to ensure the log-phase growth is well fit, but not necessarily the stationary phase. Try out `transform = "none"` to see what looks best.)
+```{r}
+## initial parameters and box constraints
+p   <- c(y0 = 0.1, mumax = .2, K = 2, lambda = 4)
+
+lower   <- c(y0 = 0.001, mumax = 0.01, K = 1, lambda = 2)
+upper   <- c(y0 = 0.3, mumax = 2, K = 5, lambda = 8)
+
+## fit growth models to all data using log transformed residuals
+many_gompertz1 <- all_growthmodels(
+                   OD ~ grow_gompertz3(time, parms) | strain + rep,
+                   data = dfExtended.trim,
+                   p = p, lower = lower, upper = upper,
+                   transform = "log", ncores = 2)
+
+## use coefficients of first fit as new initial parameters
+pp   <- coef(many_gompertz1)
+## re-fit models
+many_gompertz2 <- all_growthmodels(
+                   OD ~ grow_gompertz3(time, parms) | strain + rep,
+                   data = dfxtended.trim,
+                   p = pp, lower = lower, upper = upper,
+                   transform = "log", ncores = 2)
+```
+
+```{r}
+df.co.gompertz <- results(many_gompertz2)
+View(df.co.gompertz)
+```
+
+```{r}
+plot(many_gompertz2)
+```
 
 
 # Analysis

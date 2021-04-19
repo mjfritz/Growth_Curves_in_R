@@ -2,7 +2,6 @@
 # Depends on openxlsx, dplyr, scales for log transformations and the here package for file pathing.
 # library(openxlsx)
 # library(tidyverse)
-# library(dplyr)
 # library(scales)
 # library(here)
 
@@ -419,7 +418,7 @@ format_GC <- function(df, strainfactors, conditionfactors){
 # Requires a list of the grouping variables, quotes.
 mean_OD <- function(df, groupingvariables){
   dots <- lapply(groupingvariables, as.symbol)
-  means.df <- df %>% group_by(.dots = dots) %>%
+  means.df <- df %>% group_by(!!!sym(dots)) %>%
     summarize_at(vars(OD.corrected), list( means = mean, sds = sd, se = ~ sd(.)/sqrt(n()))) %>%
     mutate(lower = means - se, upper = means + se) %>% ungroup(all_of(groupingvariables))
   return(means.df)
