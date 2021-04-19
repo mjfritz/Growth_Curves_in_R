@@ -32,6 +32,9 @@ For general R help: [R for Data Science](https://r4ds.had.co.nz/), Google, stack
 (Also, I am a bit of a novice to coding, so there are definitely multiple ways of accomplishing similar goals. Some much more elegant than these. But I don't know them yet.)
 
 ## Dependecies
+
+**installing stuff**
+
 To start, these scripts rely on packages you may need to install (download) and then load (kind of like attaching.) You may have tons of packages installed, but only need to load the ones that you will be using for a certain analysis. (You do need to keep in mind that you need to load the packages each time you open RStudio, if you stop mid analysis.)
 
 Most packages are stored in respository that R can access easily. Typing `install.packages(` and then starting to type the name of the package may autofill what you want. If it doesn't, enter the name in quotations. RStudio may ask you to pick a mirror site, typically choosing one geographically close is fastest. (If it is not available on the CRAN repositories, visit that packages website/git page. There should be installation instructions.)
@@ -42,7 +45,7 @@ library(rstatix)
 library(openxlsx)
 library(janitor)
 library(reshape2)
-library(inauguration)
+library(inauguration) # Note to me, take this out!
 library(paletteer) # Not necessary
 library(scales) # Not entirely necessary
 library(RColorBrewer) # Not necessary
@@ -184,6 +187,7 @@ If I had really specific colors that I new the hex code for, I could also enter 
 #### Named color vectors
 I like named color vectors to keep colors consistent across plots. For this, we just need to make a vector of color codes, each entry named to match the levels of whatever variable you'd like to color on. Here we're matching number of strains
 
+
 First, find how many colors you'll need for each. Here I know that the strains/samples I ran on each plate are all the same, so I'm only testing R1.
 ```{r}
 unique(R1[[2]]$strain)
@@ -264,24 +268,39 @@ This function can only handle formatting one condition variable, however if you 
 
 ### Mutliple independent condition variables
 
-In this specific experiment, I actually have two condition factors (Ion and Buffer recipe/levels) that I've currently been treating as one condition factor. (And will still also use as an example later.) When it comes time for the stat analysis, I'd like to be able to control and compare using these. As might be obvious frome the condition labels, each `condition` value dictates the values of two other factors I'd like to be able to analyze: Buffer and Ions.
+In this specific experiment, I actually have two condition factors (Ion and Buffer recipe/levels) that I've currently been treating as one condition factor. (And will still also use as an example later.) When it comes time for the stat analysis, I'd like to be able to control and compare using these. As might be obvious from the condition labels, each `condition` value dictates the values of two other factors I'd like to be able to analyze: Buffer and Ions.
 
-Depending on how the `condidtion` variable is structured, you could have two different approaches to extracting the levels/values for each variable: manual-case-by-case assignment or automatic separation of a compound `condition`.
+The exact breakdown of my condition into the sub-conditions looks like:
+
+| Condition value | Buffer | Ion formula |
+|-------|-------|-------|
+|RKS| RKS| RKS|
+|RKS_mod| RKS| CSH|
+|CSH| CSH| CSH|
+|CSH_mod| CSH| RKS|
+
+So now I'd like to extract these two variables from the condition variable.
+
+Depending on how the `condidtion` variable is structured, you will have two different approaches to extracting the levels/values for each variable: 
+
+1. Manual-case-by-case assignment or
+2. Automatic separation of a compound `condition`.
 
 #### Manual assimgment.
+If the condition names are not easily broken down into sub-variables, you'll have to assign them case by case.
 
 Because I did not name my conditions with compound conditions, extracting the two different variables from one `condition` variable will take a little work. The general flow is: for each new variable, examine what is in the original `condition` varaible at each row, and assign a value on a case-by-case basis. The conditions were named after the buffering components of the media, so I assigned `Buffer` using a general serach for the two different buffers. The `Ions` required an individual assigment for each possible value of the `condition` variable. 
 
-To add extra variable columns, we'll use:
+To add extra variable columns, we'll use the following functions:
 
 * piping `%>%` to continuously modify the data frame `df`, by passing it through functions that then "return" a modified `df` to hand off
-* `mutate` to create a new column/variable and assign it values at each row
+* `mutate` to create a new column/variable and assign it values at each row. If you make the new column name (the first part before the equal sign) the same as the old column name, you will just replace/modify the existing column.
+* `grepl` to find which the values we want. Because of how I named these conditions, I need to search for any instances of "RKS" or "CSH" in the `condition` variable, regardless of whether they are by themselves, or part of a larger string. (Note, I could just have repeated what I did for the `Ions` variable up in the `Buffer` part, and written out each case explicitly, but I let R do the legwork for me.)
 * `case_when` to conditionally assign values to this new variable based on the values in other columns/variables for that row
   + There is an item for each case we want to consider, demarcated by a comma
   + The left side of the case (before the tilde `~`) is the case we're checking for. This should evaluate to a boolean (TRUE/FALSE).
   + The right side of the case (after the `~`) is the value to put store in the variable at that row. Here we have character strings.
   + R will go through each row of the data frame, and check for each case in order, until it finds a true evaluation. It then assigns the corresponding value to the new variable, and moves to the next row. (No later conditions will be checked.)
-* `grepl` to find which the values we want. Because of how I named these conditions, I need to search for any instances of "RKS" or "CSH" in the `condition` variable, regardless of whether they are by themselves, or part of a larger string. (Note, I could just have repeated what I did for the `Ions` variable up in the `Buffer` part, and written out each case explicitly, but I let R do the legwork for me.)
 * `factor` to turn each variable into a factor, with a specific ordering. (This is how the `format_GC` function works.)
 
 ```{r}
