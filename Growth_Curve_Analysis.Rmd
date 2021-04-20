@@ -41,10 +41,10 @@ You may have tons of packages installed, but only need to load the ones that you
 
 Most packages are stored in an online respository that R can access easily (called CRAN). Typing `install.packages(` and then starting to type the name of the package may autofill what you want. If it doesn't, enter the name in quotations. RStudio may ask you to pick a mirror site, typically choosing one geographically close is fastest. (If it is not available on the CRAN repositories, visit that packages website/git page. There should be installation instructions.)
 
-These packages are what I run. Some of them are not entirely necessary, but I use in this tutorial and make things easier/nicer. I have marked them. (To not load them, comment that line of code out with `Ctrl+Shift+C` when on that line, or while highlighting multiple lines.)
+These packages are what I run. Some of them are not entirely necessary, but I use in this tutorial and make things easier/nicer. I have marked them. In particular, *if you are only running the parsing script to format data* you only need the packages marked "Needed for Parsing." (To not load a package, comment that line of code out with `Ctrl+Shift+C` when on that line, or while highlighting multiple lines.)
 ```{r}
 library(rstatix)
-library(openxlsx)
+library(openxlsx) # Needed for Parsing
 library(janitor)
 library(reshape2)
 library(paletteer) # Not necessary
@@ -55,9 +55,9 @@ library(multcomp)
 library(multcompView)
 library(DescTools)
 library(growthrates)
-library(tidyverse)
+library(tidyverse) # Needed for Parsing
 library(here) # Not necessary, just what I use to make pathing things easier, and only dependent on project sub-folders.
-source(here("parse_96wellGrowthCurves.R")) # This is the script I wrote, just make sure to path to wherever you keep it.
+source(here("parse_96wellGrowthCurves.R")) # This is the script I wrote, just make sure to path to wherever you keep it. And Needed for Parsing.
 ```
 You should see a bunch of red text, some of which will talk about objects being masked form packages. The order of loading packages can matter, as the last package to load that uses a shared object name, is the one that gets to use that name by default.  
 
@@ -66,7 +66,7 @@ The last line should be a call that tells you the folder where the `here` packag
 (As a note, the `here` function name is used by multiple packages, so sometimes you'll think you are using `here` from the `here` package, but you are using the function from another, say `stats`. If a line of code is giving you problems contains a `here()`, try putting in place `here::here()` which tells R to specifically go to the `here` package and use that version of the function. If we instead wanted the stats version, we would use `stats::here()` to override whatever R is defaulting on.)
 
 
-These ar packages that are helpful in making great plots, but not necessary for this tutorial (and so have been commented out.)
+These are packages that are helpful in making great plots, but not necessary for this tutorial (and so have been commented out.)
 ```{r}
 # library(ggrepel) # Not necessary
 # library(ggpubr)
@@ -87,7 +87,7 @@ The template spread sheet must have columns named `Well_ID`, `Strain`, `Conditio
 
 * Empty wells should have "blank" as their sample name.
 * When running a series of plates, keep the naming (including capitalization) of strains and conditions the same between them.
-* The way the code is written (and to make your life easier later), *do not use periods/dots or other special characters* for strain, condition, etc. Hyphens and underscores are OK, (underscores are "traditionally" used in place of spaces.) While periods/dots are typically fine, some of the formatting tricks in my code rely on the as delimitters between items.
+* The way the code is written (and to make your life easier later), *do not use periods/dots or other special characters* for strain, condition, etc. Hyphens and underscores are OK, (underscores are "traditionally" used in place of spaces. *If you are parsing for Prism*, don't use hypens.) While periods/dots are typically fine, some of the formatting tricks in my code rely on the as delimitters between items.
 * If you have multiple biological replicates and technical replicates on a plate, use a hypenated system to denote both in the `Replicate` column, i.e. "C-2" would be for technical replicate 2 of biolgoical replicate C for a specific sample.
 * The `Plate` entries should be identical the entire way down the plate, and each plate should have its own template. (In theory you could use the same template file, and then change the plate name for each data frame individually.)
 
@@ -173,9 +173,11 @@ names(R1[[3]])
 
 ## Initial look at the data
 
-The `plot_from_melted_plate_faceted` and `plot_from_melted_plate` functions are both simple functions, meant to be a fast way to look at each plate. (They can take more than 1 plates-worth of data in one data frame, but formatting and customiazability are limited.) The first returns a single plot faceted by whatever your different conditions are, the second returns 1 plot per condition. Both require you to give them the data frame (no path needed this time), a (named) color vector for coloring by strain, a title in string format, and the type of scaling on the y-axis you would like ("straight", "log2", "log10", "natural_log".)
+The `plot_from_melted_plate_faceted` and `plot_from_melted_plate` functions are both simple functions, meant to be a fast way to look *at each plate*. This is when you get see if there are outliers, etc. (They can take more than 1 plate's-worth of data in one data frame, but formatting and customiazability are limited.) The first returns a single plot faceted by whatever your different conditions are, the second returns 1 plot per condition. Both require you to give them the data frame (no path needed this time), a (named) color vector for coloring by strain, a title in string format, and the type of scaling on the y-axis you would like ("straight", "log2", "log10", "natural_log".)
 
 ### Color vectors
+
+A detour to cover colors...
 
 #### Unnamed color vectors.
 If I had different strains across different plates and didn't care that colors matched, I could just create an unnamed color vector.    

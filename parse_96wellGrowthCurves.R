@@ -1,9 +1,10 @@
 #This was formerlly titled parse_SparkControl.R . That file still exists, but is now not updated.
 # Depends on openxlsx, dplyr, scales for log transformations and the here package for file pathing.
-# library(openxlsx)
-# library(tidyverse)
-# library(scales)
-# library(here)
+library(openxlsx)
+library(tidyverse)
+library(dplyr)
+library(scales)
+library(here)
 
 # To setup for this, fill in the plate_template.xlsx table and save it to correlate to the plate.
 # It has columns for well ID (first) in letterNumber format (ex, B11 for Row 2/B, column 11 on the plate),
@@ -16,13 +17,19 @@
 
 
 #Smaller helper function to conver the data into "long" format (where it starts with a column for each sample.)
-melt_plate <- function(.data){
+melt_plate <- function(.data, prism = NULL){
   plate <- data.frame(t(.data), stringsAsFactors = FALSE)
   colnames(plate) <- plate[1, ]
   plate <- plate[-1, ]
   plate$sample_name <- rownames(plate)
-  plate <- plate %>% separate(sample_name, sep = "\\.",
+  
+  if(!is.null(prism)){
+    plate <-   plate <- plate %>% separate(sample_name, sep = "\\-",
+                                           c("strain", "condition", "plate", "rep"), remove = FALSE)
+  } else{
+    plate <- plate %>% separate(sample_name, sep = "\\.",
                               c("strain", "condition", "plate", "rep"), remove = FALSE)
+  }
   sample_data <- plate %>% dplyr::select(tail(names(.), 5))
   plate_m <- pivot_longer(plate, 1:(ncol(plate)-5),
                           names_to = "time", values_to = "absorbance")
@@ -38,11 +45,17 @@ assign_wells <- function(templatewithpath, datasheet, output = c("python", "pris
     blanks <- df[df$Strain == "blank", "Well_ID"] # Find blank wells
     df <- df[!(df$Strain == "blank"), ] # Remove blank wells from template
   }
-  if (output %in% c("python", "R")){
+  
+  if(!is.null(output)){
+      if(output == "prism"){
+      df$ID <- paste(df$Strain, df$Condition, df$Plate, df$Replicate, sep = "-") # Simply so that ordering is possible
+      } else {
+        df$ID <- paste(df$Strain, df$Condition, df$Plate, df$Replicate, sep = ".") # Create column of new names
+      }
+  } else {
     df$ID <- paste(df$Strain, df$Condition, df$Plate, df$Replicate, sep = ".") # Create column of new names
-  } else if (output == "prism"){
-    df$ID <- paste(df$Strain, df$Condition, df$Replicate, sep = "-") # Simply so that ordering is possible
   }
+  
   if (remove_emptys == TRUE) {
     datasheet <- datasheet[ , -which(names(datasheet) %in% blanks)] # Remove blanks from data sheet
   }
@@ -82,10 +95,19 @@ This may not be expandable to all cases.
 # you will need to adjust the speceific rows  in the metadata's and sheets[[]]'s read.xlsx calls. 
 # Ex. I think 24 hours will not have two separate chunks of data, so there will only be one range for meta data, and one range for the first sheet.
 # This would also remove the need to bind_rows, but would need to be assigned to gd, then.
-parse_growth_Spark <- function(datawithpath, templatewithpath, output = c("python", "prism", "R"),
-                              remove_emptys = c(TRUE, FALSE), outputfoldername){
+parse_growth_Spark <- function(datawithpath, templatewithpath, output = NULL,
+                              remove_emptys = c(TRUE, FALSE), outputfoldername = NULL){
   sheets <- vector("list", 2)
+  prism = NULL
   
+  #These rows are dependent on the methods used and number of cycles
+  metadata <- read.xlsx(datawithpath,
+                        rows = c(29:51, 200:218, 367), cols = 1:5,
+                        skipEmptyRows = TRUE, skipEmptyCols = TRUE,
+                        rowNames = FALSE, colNames = FALSE) #There will be multiple rows with same name
+  metadata$X4 <- with(metadata, ifelse(is.na(X2), X3, X2))
+  metadata <- metadata[ , c("X1", "X4")]
+
   
   #These rows and columns are dependent on the number of cycles and timepoints
   sheets[[1]] <- read.xlsx(datawithpath,
@@ -101,18 +123,25 @@ parse_growth_Spark <- function(datawithpath, templatewithpath, output = c("pytho
   sheets[[2]]$`Time..s.` <- sheets[[2]]$`Time..s.` + 86400
   gd <- bind_rows(sheets[[1]], sheets[[2]])
   
-  if (output == "python"){
-    gd$time <- round(gd$`Time..s.`/60) # Converting to minutes
-  } else if (output == "prism"){
-    t <- round(gd$`Time..s.`)
-    hours <- t%/%3600
-    t <- t%%3600
-    minutes <- t%/%60
-    seconds <- t%%60
-    gd$time <- paste(hours, minutes, seconds, sep = ":")
-  } else if (output == "R"){
+  if(!is.null(output)){
+    if (output == "python"){
+      gd$time <- round(gd$`Time..s.`/60) # Converting to minutes
+    } else if (output == "prism"){
+      t <- round(gd$`Time..s.`)
+      hours <- t%/%3600
+      t <- t%%3600
+      minutes <- t%/%60
+      seconds <- t%%60
+      gd$time <- paste(hours, minutes, seconds, sep = ":")
+      prism <- TRUE
+    }
+    else if (output == "R"){
+      gd$time <- gd$`Time..s.`/60/60 # Converting to hours
+    }
+  } else { # Letting the "R" format be the default
     gd$time <- gd$`Time..s.`/60/60 # Converting to hours
   }
+    
 
   gd <- subset(gd, select=-c(`Time..s.`, `Temp....C.`)) # Remove unwanted columns
   gd <- assign_wells(templatewithpath, gd, output, remove_emptys) # Rename columns based on samples
@@ -121,30 +150,39 @@ parse_growth_Spark <- function(datawithpath, templatewithpath, output = c("pytho
   
 
   # Creating a melted data frame for graphing
-  mp <- melt_plate(gd)
+  mp <- melt_plate(gd, prism)
 
-  dir.create(here::here(outputfoldername), showWarnings = FALSE)
-  if (output == "prism"){
-    fn <- paste0(gsub(".xlsx", "", basename(datawithpath), fixed = TRUE), "_parsedforPrism.csv")
-    fullfn <-here::here(outputfoldername, fn)
-    cat("Saving: ", fullfn, "\n")
-    write.csv(gd, file = fullfn, row.names = FALSE)
-  } else if (output == "python") {
-    fn <- paste0(gsub(".xlsx", "", basename(datawithpath), fixed = TRUE), "_parsedforPython.tsv")
-    fullfn <-here::here(outputfoldername, fn)
-    cat("Saving: ", fullfn, "\n")
-    write.table(gd, file = fullfn, sep = "\t", row.names = FALSE)
-  } else if (output == "R") {
-    fn <- paste0(gsub(".xlsx", "", basename(datawithpath), fixed = TRUE), "_parsedforR.csv")
-    fullfn <-here::here(outputfoldername, fn)
-    cat("Saving: ", fullfn, "\n")
-    write.csv(gd, file = fullfn, row.names = FALSE)
-  }
-  else {
+  # Check to see what if the output is being saved and where, with error check.
+  if(!is.null(output)){
+    if(!is.null(outputfoldername)){
+      dir.create(here(outputfoldername), showWarnings = FALSE)
+      if (output == "prism"){
+        fn <- paste0(gsub(".xlsx", "", basename(datawithpath), fixed = TRUE), "_parsedforPrism.csv")
+        fullfn <-here::here(outputfoldername, fn)
+        cat("Saving: ", fullfn, "\n")
+        write.csv(gd, file = fullfn, row.names = FALSE)
+      } else if (output == "python") {
+        fn <- paste0(gsub(".xlsx", "", basename(datawithpath), fixed = TRUE), "_parsedforPython.tsv")
+        fullfn <-here::here(outputfoldername, fn)
+        cat("Saving: ", fullfn, "\n")
+        write.table(gd, file = fullfn, sep = "\t", row.names = FALSE)
+      } else if (output == "R") {
+        fn <- paste0(gsub(".xlsx", "", basename(datawithpath), fixed = TRUE), "_parsedforR.csv")
+        fullfn <-here::here(outputfoldername, fn)
+        cat("Saving: ", fullfn, "\n")
+        write.csv(gd, file = fullfn, row.names = FALSE)
+      } else{
+        print("File was not saved because output format was not \"R\", \"prism\", or \"python\".", quote = FALSE)
+      }
+    }
+    else {
+      print("File was not saved because output directory was not specified.")
+    }
+  } else{
     print("Not saving parsed file.")
   }
 
-  return(setNames(list(gd, mp[[1]], mp[[2]]), c("data", "melted", "sample_data")))
+  return(setNames(list(metadata, gd, mp[[1]], mp[[2]]), c("metadata", "data", "melted", "sample_data")))
 }
 
 
@@ -153,23 +191,24 @@ parse_growth_Spark <- function(datawithpath, templatewithpath, output = c("pytho
 # the two options for output are .txt and .xls, both of which require resaving/checking.)
 # For other length data, make sure that the # of BLOCKS is 1, and modify the read.xlsx call to either replace the startRow parameter with
 # a rows parameter or just modify it. For Less than 48 hours, you can remove the secondhalf bit, as well as the bind_rows call that combines the data frames.
-parse_growth_VersaMax_xlsx <- function(datawithpath, templatewithpath, output = c("python", "prism", "R"),
-                                       remove_emptys = c(TRUE, FALSE), outputfoldername){
+parse_growth_VersaMax_xlsx <- function(datawithpath, templatewithpath, output = NULL,
+                                       remove_emptys = c(TRUE, FALSE), outputfoldername = NULL){
+  prism = NULL
   df <- read.xlsx(datawithpath,
                   startRow = 3,
                   skipEmptyCols = TRUE,
-                  rowNames = FALSE, colNames = TRUE, check.names = TRUE) %>%
-    rename("temp" = 'Temperature..C.') %>%
-    filter(!is.na(temp))
+                  rowNames = FALSE, colNames = TRUE, check.names = TRUE) %>% drop_na()
   
   # The time formats are really funky. For time <24 hours, it's in a decimal format. For Time >= 24, it's in a hybrid "day.hour:minutes:seconds" format.
   firsthalf <- df[!(grepl("\\:", df$Time)), ] %>%
     mutate(time = round(as.numeric(Time)*24, 2)) %>%
-    relocate(time) %>% select(-c(Time, temp))
+    relocate(time) %>% select(-c(Time, 'Temperature..C.'))
   secondhalf <- df[grepl("\\:", df$Time), ] %>%
     separate(Time, into = c("days", "hours", "minutes", "seconds"), sep = "[.:]", convert = TRUE, fill = "left") %>%
     mutate(time = round(days*24 + hours + minutes/60 + seconds/(60*60), 2)) %>%
-    relocate(time) %>% select(-c(temp, days, hours, minutes, seconds))
+    relocate(time) %>% select(-c('Temperature..C.', days, hours, minutes, seconds))
+  
+  
   
   # Combine and assign sample names
   gd <- bind_rows(firsthalf, secondhalf) %>% arrange(time)
@@ -177,28 +216,55 @@ parse_growth_VersaMax_xlsx <- function(datawithpath, templatewithpath, output = 
   gd <- gd[ , order(names(gd))]
   gd <- gd %>% relocate(time)
   
-  # created melted plate
-  mp <- melt_plate(gd)
-  
-  # save in various formats
-  dir.create(here::here(outputfoldername), showWarnings = FALSE)
-  if (output == "prism"){
-    fn <- paste0(gsub(".xlsx", "", basename(datawithpath), fixed = TRUE), "_parsedforPrism.csv")
-    fullfn <- here::here(outputfoldername, fn)
-    cat("Saving: ", fullfn, "\n")
-    write.csv(gd, file = fullfn, row.names = FALSE)
-  } else if (output == "python") {
-    fn <- paste0(gsub(".xlsx", "", basename(datawithpath), fixed = TRUE), "_parsedforPython.tsv")
-    fullfn <- here::here(outputfoldername, fn)
-    cat("Saving: ", fullfn, "\n")
-    write.table(gd, file = fullfn, sep = "\t", row.names = FALSE)
-  } else if (output == "R") {
-    fn <- paste0(gsub(".xlsx", "", basename(datawithpath), fixed = TRUE), "_parsedforR.csv")
-    fullfn <- here::here(outputfoldername, fn)
-    cat("Saving: ", fullfn, "\n")
-    write.csv(gd, file = fullfn, row.names = FALSE)
+  if(!is.null(output)){
+    if (output == "python"){
+      gd$time <- round(gd$`Time..s.`/60) # Converting to minutes
+    } else if (output == "prism"){
+      t <- round(gd$`Time..s.`)
+      hours <- t%/%3600
+      t <- t%%3600
+      minutes <- t%/%60
+      seconds <- t%%60
+      gd$time <- paste(hours, minutes, seconds, sep = ":")
+      prism <- TRUE
+    }
+    else if (output == "R"){
+      gd$time <- gd$`Time..s.`/60/60 # Converting to hours
+    }
+  } else { # Letting the "R" format be the default
+    gd$time <- gd$`Time..s.`/60/60 # Converting to hours
   }
-  else {
+  
+  # created melted plate
+  mp <- melt_plate(gd, prism)
+  
+  # Check to see what if the output is being saved and where, with error check.
+  if(!is.null(output)){
+    if(!is.null(outputfoldername)){
+      dir.create(here(outputfoldername), showWarnings = FALSE)
+      if (output == "prism"){
+        fn <- paste0(gsub(".xlsx", "", basename(datawithpath), fixed = TRUE), "_parsedforPrism.csv")
+        fullfn <-here::here(outputfoldername, fn)
+        cat("Saving: ", fullfn, "\n")
+        write.csv(gd, file = fullfn, row.names = FALSE)
+      } else if (output == "python") {
+        fn <- paste0(gsub(".xlsx", "", basename(datawithpath), fixed = TRUE), "_parsedforPython.tsv")
+        fullfn <-here::here(outputfoldername, fn)
+        cat("Saving: ", fullfn, "\n")
+        write.table(gd, file = fullfn, sep = "\t", row.names = FALSE)
+      } else if (output == "R") {
+        fn <- paste0(gsub(".xlsx", "", basename(datawithpath), fixed = TRUE), "_parsedforR.csv")
+        fullfn <-here::here(outputfoldername, fn)
+        cat("Saving: ", fullfn, "\n")
+        write.csv(gd, file = fullfn, row.names = FALSE)
+      } else{
+        print("File was not saved because output format was not \"R\", \"prism\", or \"python\".", quote = FALSE)
+      }
+    }
+    else {
+      print("File was not saved because output directory was not specified.")
+    }
+  } else{
     print("Not saving parsed file.")
   }
   
@@ -407,27 +473,21 @@ format_GC <- function(df, strainfactors, conditionfactors){
     mutate(OD.corrected = OD - min(OD)) %>% ungroup(condition, strain, sample_name)
   return(newdf)
 }
-#If you are not correcting by the minimum OD, you should still have values in your data frame with sample_name == "blank".
-#To use the average of these as the baseline, insert a line before the "newdf <- ..." line of code that reads:
-#  baseline <- mean(df[ df$sample_name == "blank", absorbance])
-#Then replace both of the lines "group_by( ..." and "mutate(OD.corrected ..." with:
-#  mutate(OD.corrected = OD - baseline)'
-
 
 # Convenience function to calculate the mean absorbance values for BASELINED data.
-# Requires a list of the grouping variables, quotes.
+# Requires a list of the grouping variables, WITHOUT quotes.
 mean_OD <- function(df, groupingvariables){
   dots <- lapply(groupingvariables, as.symbol)
-  means.df <- df %>% group_by(!!!sym(dots)) %>%
-    summarize_at(vars(OD.corrected), list( means = mean, sds = sd, se = ~ sd(.)/sqrt(n()))) %>%
-    mutate(lower = means - se, upper = means + se) %>% ungroup(all_of(groupingvariables))
-  return(means.df)
+  means <- df %>% group_by(.dots = dots) %>%
+    summarize_at(vars(OD.corrected), list( mean = mean, sd = sd, se = ~ sd(.)/sqrt(n()))) %>%
+    mutate(lower = mean - se, upper = mean + se) %>% ungroup(all_of(groupingvariables))
+  return(means)
 }
 
 # Convenience funtion to plot means with error ribbon. These are unfacted and with minimal formatting to allow later modifcation.
 # Does expect a named character vector for colors
 bare_meanplot <- function(df, namedcolors){
-  ggplot(data = df, mapping = aes(x = time, y = means, color = strain)) +
+  ggplot(data = df, mapping = aes(x = time, y = mean, color = strain)) +
     scale_color_manual(values = namedcolors) +
     scale_fill_manual(values = namedcolors) +
     geom_line() +
