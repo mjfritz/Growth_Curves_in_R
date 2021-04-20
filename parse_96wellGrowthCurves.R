@@ -100,13 +100,7 @@ parse_growth_Spark <- function(datawithpath, templatewithpath, output = NULL,
   sheets <- vector("list", 2)
   prism = NULL
   
-  #These rows are dependent on the methods used and number of cycles
-  metadata <- read.xlsx(datawithpath,
-                        rows = c(29:51, 200:218, 367), cols = 1:5,
-                        skipEmptyRows = TRUE, skipEmptyCols = TRUE,
-                        rowNames = FALSE, colNames = FALSE) #There will be multiple rows with same name
-  metadata$X4 <- with(metadata, ifelse(is.na(X2), X3, X2))
-  metadata <- metadata[ , c("X1", "X4")]
+  #Ignoring the Meta data
 
   
   #These rows and columns are dependent on the number of cycles and timepoints
@@ -141,7 +135,6 @@ parse_growth_Spark <- function(datawithpath, templatewithpath, output = NULL,
   } else { # Letting the "R" format be the default
     gd$time <- gd$`Time..s.`/60/60 # Converting to hours
   }
-    
 
   gd <- subset(gd, select=-c(`Time..s.`, `Temp....C.`)) # Remove unwanted columns
   gd <- assign_wells(templatewithpath, gd, output, remove_emptys) # Rename columns based on samples
@@ -155,7 +148,7 @@ parse_growth_Spark <- function(datawithpath, templatewithpath, output = NULL,
   # Check to see what if the output is being saved and where, with error check.
   if(!is.null(output)){
     if(!is.null(outputfoldername)){
-      dir.create(here(outputfoldername), showWarnings = FALSE)
+      dir.create(here::here(outputfoldername), showWarnings = FALSE)
       if (output == "prism"){
         fn <- paste0(gsub(".xlsx", "", basename(datawithpath), fixed = TRUE), "_parsedforPrism.csv")
         fullfn <-here::here(outputfoldername, fn)
@@ -182,7 +175,7 @@ parse_growth_Spark <- function(datawithpath, templatewithpath, output = NULL,
     print("Not saving parsed file.")
   }
 
-  return(setNames(list(metadata, gd, mp[[1]], mp[[2]]), c("metadata", "data", "melted", "sample_data")))
+  return(setNames(list(gd, mp[[1]], mp[[2]]), c("data", "melted", "sample_data")))
 }
 
 
@@ -197,16 +190,18 @@ parse_growth_VersaMax_xlsx <- function(datawithpath, templatewithpath, output = 
   df <- read.xlsx(datawithpath,
                   startRow = 3,
                   skipEmptyCols = TRUE,
-                  rowNames = FALSE, colNames = TRUE, check.names = TRUE) %>% drop_na()
+                  rowNames = FALSE, colNames = TRUE, check.names = TRUE) %>%
+    rename("temp" = 'Temperature..C.') %>%
+    filter(!is.na(temp))
   
   # The time formats are really funky. For time <24 hours, it's in a decimal format. For Time >= 24, it's in a hybrid "day.hour:minutes:seconds" format.
   firsthalf <- df[!(grepl("\\:", df$Time)), ] %>%
     mutate(time = round(as.numeric(Time)*24, 2)) %>%
-    relocate(time) %>% select(-c(Time, 'Temperature..C.'))
+    relocate(time) %>% select(-c(Time, temp))
   secondhalf <- df[grepl("\\:", df$Time), ] %>%
     separate(Time, into = c("days", "hours", "minutes", "seconds"), sep = "[.:]", convert = TRUE, fill = "left") %>%
     mutate(time = round(days*24 + hours + minutes/60 + seconds/(60*60), 2)) %>%
-    relocate(time) %>% select(-c('Temperature..C.', days, hours, minutes, seconds))
+    relocate(time) %>% select(-c( temp, days, hours, minutes, seconds))
   
   
   
@@ -241,7 +236,7 @@ parse_growth_VersaMax_xlsx <- function(datawithpath, templatewithpath, output = 
   # Check to see what if the output is being saved and where, with error check.
   if(!is.null(output)){
     if(!is.null(outputfoldername)){
-      dir.create(here(outputfoldername), showWarnings = FALSE)
+      dir.create(here::here(outputfoldername), showWarnings = FALSE)
       if (output == "prism"){
         fn <- paste0(gsub(".xlsx", "", basename(datawithpath), fixed = TRUE), "_parsedforPrism.csv")
         fullfn <-here::here(outputfoldername, fn)
@@ -478,7 +473,7 @@ format_GC <- function(df, strainfactors, conditionfactors){
 # Requires a list of the grouping variables, WITHOUT quotes.
 mean_OD <- function(df, groupingvariables){
   dots <- lapply(groupingvariables, as.symbol)
-  means <- df %>% group_by(.dots = dots) %>%
+  means <- df %>% group_by(!!!sym(dots)) %>%
     summarize_at(vars(OD.corrected), list( mean = mean, sd = sd, se = ~ sd(.)/sqrt(n()))) %>%
     mutate(lower = mean - se, upper = mean + se) %>% ungroup(all_of(groupingvariables))
   return(means)
