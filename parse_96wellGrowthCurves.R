@@ -473,7 +473,7 @@ format_GC <- function(df, strainfactors, conditionfactors){
 # Requires a list of the grouping variables, WITHOUT quotes.
 mean_OD <- function(df, groupingvariables){
   dots <- lapply(groupingvariables, as.symbol)
-  means <- df %>% group_by(!!!sym(dots)) %>%
+  means <- df %>% group_by(!!!syms(dots)) %>%
     summarize_at(vars(OD.corrected), list( mean = mean, sd = sd, se = ~ sd(.)/sqrt(n()))) %>%
     mutate(lower = mean - se, upper = mean + se) %>% ungroup(all_of(groupingvariables))
   return(means)
