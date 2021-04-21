@@ -130,10 +130,10 @@ parse_growth_Spark <- function(datawithpath, templatewithpath, output = NULL,
       prism <- TRUE
     }
     else if (output == "R"){
-      gd$time <- gd$`Time..s.`/60/60 # Converting to hours
+      gd$time <- round(gd$`Time..s.`/60/60, 2) # Converting to hours
     }
   } else { # Letting the "R" format be the default
-    gd$time <- gd$`Time..s.`/60/60 # Converting to hours
+    gd$time <- round(gd$`Time..s.`/60/60, 2) # Converting to hours
   }
 
   gd <- subset(gd, select=-c(`Time..s.`, `Temp....C.`)) # Remove unwanted columns
@@ -224,10 +224,10 @@ parse_growth_VersaMax_xlsx <- function(datawithpath, templatewithpath, output = 
       prism <- TRUE
     }
     else if (output == "R"){
-      gd$time <- gd$`Time..s.`/60/60 # Converting to hours
+      gd$time <- round(gd$`Time..s.`/60/60, 2) # Converting to hours
     }
   } else { # Letting the "R" format be the default
-    gd$time <- gd$`Time..s.`/60/60 # Converting to hours
+    gd$time <- round(gd$`Time..s.`/60/60, 2) # Converting to hours
   }
   
   # created melted plate
