@@ -18,14 +18,16 @@ The basics steps however are:
 7. Do a statistical comparison of the measures.
 8. Plot results.
 
-This requires some familiarity with R, but hopefully not too much, plus a little understanding of ggplot2. I strongly encourage you to:  
+This requires some familiarity with R (such as understanding how to call a function, navigating filing structures, and lists), plus a little understanding of ggplot2. I strongly encourage you to:  
 
 1. Use RStudio
 2. Create a new project folder (or use an existing folder) to contain all files related to your project (including multiple plates, if you have them.) This will be your working directory.
-3. Create an R-Notebook (which can be saved in the base directory, or in a sub-folder, useful for when you have more than one notebook but in the same project).
+3. Create a new R-Notebook (which can be saved in the base directory, or in a sub-folder, useful for when you have more than one notebook but in the same project).
 4. And to copy/paste, modify, and run each bit of code in separate code blocks to, while making notes about your analysis as you go.
 
 This will track exactly what lines of code your ran (which leave out what you did not), as well Document your analysis and save your results together, as if in a lab notebook. (See [this resource](https://bookdown.org/yihui/rmarkdown/notebook.html) for more in depth help with notebooks.) Using the code chunks in a notebook will also help with troubleshooting, as the pipeline will be broken up.
+
+Troubleshooting is a huge part of programming. Don't be 
 
 For general R help: [R for Data Science](https://r4ds.had.co.nz/), Google, stackoverflow, and any results from STDHA and datanovia are very helpful. Searching for the exact wording of an error, or just what you're trying to accomplish in general can typically generate good results. I also like to use the "Environment" pane in RStudio to see what variables I have in use. Clicking on their names will also allow you to vew them in matrix format, where you can hover over column names for data type info. This is often helpful for debugging.
 
@@ -253,7 +255,11 @@ You can see that my CSH_mod conditions definitely vary by plate, but overall tre
 
 ### Formatting the data
 
-In order to start getting things ready to plot, and to analyze, we should remove the baseline from the absorbance readings, and order the strains and conditions in a meaningful way. We can do that with `format_GC`, which will remove the baseline from each well's readings (definied as the minimum value measured across all times), and allow you to order the strains and conditions in a way that makes sense for you. It also makes both of these variables the "factor" type, which is great for categorical variables, and often required for certain stat analyses.
+In order to start getting things ready to plot, and to analyze, we should remove the baseline from the absorbance readings, and order the strains and conditions in a meaningful way. We can do that with `format_GC`, which will:  
+
+1. Remove the baseline from each well's readings (definied as the minimum value measured across all times)
+2. Round time off to 2 decimal places so that timepoints are grouped together appropriately
+3. Allow you to order the strains and conditions in a way that makes sense for you. It also makes both of these variables the "factor" type, which is great for categorical variables, and often required for certain stat analyses.
 
 To start, let's see how R ordered my strains and conditions:
 ```{r}
@@ -269,10 +275,16 @@ df <- format_GC(allplates,
 unique(df$strain)
 unique(df$condition)
 ```
+If you check out the column names of `df`, you can see that the function created some columns, and renamed others.
+```{r}
+names(df)
+```
+
 
 This function can only handle formatting one condition variable, however if you have more than one...
 
 ### Mutliple independent condition variables
+(To start, I would still run the `format_GC` function to let it do its other functions. Simply replace the list of condition factors )
 
 In this specific experiment, I actually have two condition factors (Ion and Buffer recipe/levels) that I've currently been treating as one condition factor. (And will still also use as an example later.) When it comes time for the stat analysis, I'd like to be able to control and compare using these. As might be obvious from the condition labels, each `condition` value dictates the values of two other factors I'd like to be able to analyze: Buffer and Ions.
 
@@ -343,7 +355,8 @@ dfExtended <- df %>% separate(condition, into = c("First Variable", "Second Vari
 Because using two condition varialbes is just an extension of using one, I will procede through this example with two variables. (Where typically simplifying down to one means just deleting the second variable.)
 
 ### Plotting the means
-We can also look at quick plot of the means at each time point using `mean_OD` and `bare_meanplot` plot. `mean_OD` just needs the data frame you wish to calculate the mean ODs for, and how you want to group the data. It will return a data frame columns for OD-corrected absorbance, mean, and error stats.  
+
+We can also look at a plot of the means at each time point using `mean_OD` and `bare_meanplot` plot. `mean_OD` just needs the data frame you wish to calculate the mean ODs for, and how you want to group the data. It will return a data frame columns for OD-corrected absorbance, mean, and error stats.  
 Most often for general growth curve representation, we want to group by time, strain, and condition. The grouping variables need to be entered in a list with quotes around each. There is a row each strain/condition combination. (Here 6 strains $\times$ 4 conditions $\times$ 288 time points.)
 ```{r}
 df.means <- mean_OD(dfExtended, c("time", "strain", "Buffer", "Ions"))
@@ -478,6 +491,7 @@ Because of how numerical fitting works, we have to give the function starting es
 
 We are also going to fit this
 
+*numbers need adjusted and condition added*
 (Note that this example chooses to fit log transformed data, which tends to ensure the log-phase growth is well fit, but not necessarily the stationary phase. Try out `transform = "none"` to see what looks best.)
 ```{r}
 ## initial parameters and box constraints
@@ -492,9 +506,14 @@ many_gompertz1 <- all_growthmodels(
                    data = dfExtended.trim,
                    p = p, lower = lower, upper = upper,
                    transform = "log", ncores = 2)
+```
 
+Now we're going to re-fit to try to hone in even more. This is the opportunity to adjust the lag time (lambda). You might want to do this if you don't expect lag to be changing very much, so as to re-focus where the parameters should be changing. It will help disentangle the interplay between growth rate (mumax) and lag (lambda). You would do this by un-commenting the second `pp` line, to explicitly define the `lambda` value to whatever is in the ballpark of what you think it should be.
+```{r}
 ## use coefficients of first fit as new initial parameters
 pp   <- coef(many_gompertz1)
+# pp[, "lambda"] <- 0.65
+
 ## re-fit models
 many_gompertz2 <- all_growthmodels(
                    OD ~ grow_gompertz3(time, parms) | strain + rep,

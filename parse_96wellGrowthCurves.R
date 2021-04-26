@@ -399,7 +399,7 @@ gc_plot <- function(.data, colors, title, growthscale){
   choice <- growthscale
   if (choice == "log2"){
     p <- ggplot(data = .data, mapping = aes(x=time, y=absorbance)) +
-      geom_point( aes(color=strain), size = 0.2) + 
+      geom_line( aes(color=strain, group = sample_name), size = 0.2) + 
       scale_color_manual(values = colors) +
       scale_x_continuous(breaks = seq(12,48, 4)) +
       labs(x="Time(h)", y="Absorbance at OD600", title = title) +
@@ -409,7 +409,7 @@ gc_plot <- function(.data, colors, title, growthscale){
         labels = trans_format("log2", math_format(2^.x)))
   } else if (choice == "natural_log"){
     p <- ggplot(data = .data, mapping = aes(x=time, y=absorbance)) +
-      geom_point( aes(color=strain), size = 0.2) + 
+      geom_line( aes(color=strain, group = sample_name), size = 0.2) + 
       scale_color_manual(values = colors) +
       scale_x_continuous(breaks = seq(12,48, 4)) +
       labs(x="Time(h)", y="Absorbance at OD600", title = title) +
@@ -420,14 +420,14 @@ gc_plot <- function(.data, colors, title, growthscale){
       )
   } else if (choice == "log10"){
     p <- ggplot(data = .data, mapping = aes(x=time, y=absorbance)) +
-      geom_point( aes(color=strain), size = 0.2) + 
+      geom_line( aes(color=strain, group = sample_name), size = 0.2) + 
       scale_color_manual(values = colors) +
       scale_x_continuous(breaks = seq(12,48, 4)) +
       labs(x="Time(h)", y="Absorbance at OD600", title = title) +
       scale_y_log10(breaks = 10^(0:3), labels = trans_format("log10", math_format(10^.x)))
   } else if (choice == "straight"){
     p <- ggplot(data = .data, mapping = aes(x=time, y=absorbance)) +
-      geom_point( aes(color=strain), size = 0.2) + 
+      geom_line( aes(color=strain, group = sample_name), size = 0.2) + 
       scale_color_manual(values = colors) +
       scale_x_continuous(breaks = seq(12,48, 4)) +
       labs(x="Time(h)", y="Absorbance at OD600", title = title)    
