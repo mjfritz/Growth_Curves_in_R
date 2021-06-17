@@ -49,14 +49,17 @@ po/*~
 
 
 
-# Created files
+# Created
+files
 parsed/
 testplot.pdf
 
 *.nb.html
 
 troubleshooting/
-calculated_GCmeasures_*
-*.png
 
+calculated_GCmeasures*
 *Growth Curves in R.pptx
+*.png
+!measurePlot.png
+!pairwiseHeatMap.png

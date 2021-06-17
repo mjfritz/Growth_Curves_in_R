@@ -491,6 +491,8 @@ Note that these are empircial AUCs: we fit the area under raw data points, not u
 
 ## Fitting Growth Curves and Extracting Parameters
 
+We're going to rely on the `growthrates` package to fit curves. These examples use only easy linear, smoothing splines, and the Gompertz 3-parameter equation (which I use the most). It can fit other types of growth curve equations. See its documentations and tutorials for more options.
+
 ### Removing Box effects when fitting curves
 
 It's a good idea to have a cut-off time, beyond which you will ignore the data when fitting curves. This typically affects ODs after the cultures reach stationary phase, as dips, sudden take-offs, and erratic readings can throw off the fitting or not necessarily be representative of what the population is doing/more an artifact of growth in a 96-well plate.
@@ -777,6 +779,8 @@ write.xlsx(file = here(paste0("calculated_GCmeasures_CLDs_", Sys.Date(), ".xlsx"
 
 ### The measure plot
 
+This plots each parameter extracted from the curves fitted to each well, the strain's mean within a condition, and the CLD that describes the significance patterns.
+
 This is a beast, so I tried to include a lot of notes.
 
 Also, there is a jittering function in here to make the data points easier to see. It works on the random seed, however. So if you don't like where your dots are you can use either of the commented-out `set.seed()` calls to let the seed do whatever (`NULL`) or try out different numbers to get different but reproducible results.
@@ -860,7 +864,7 @@ The CLDs can be nice, but might not show the complete picture.
 
 ### The signficance plot
 
-You can see the pairwise comparisons better with a bit of heat map.
+You can see the pairwise comparisons better with a bit of heat map. Significant differences are colored by the direction and scale of the difference, while insignificant differences are greyed out. The actual means for a strain run along the diagonal.
 
 This next bit manipulates the aovs to extract the pairwise comparisons, and tests for signficance. I've highlighted what my need to change for your conditions. (I've simplified the two-variable condition, back down to a 1-variable condition.)
 
