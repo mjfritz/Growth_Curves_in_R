@@ -46,12 +46,13 @@ Most packages are stored in an online respository that R can access easily (call
 These packages are what I run. Some of them are not entirely necessary, but I use in this tutorial and make things easier/nicer. I have marked them. In particular, *if you are only running the parsing script to format data* you only need the packages marked "Needed for Parsing." (To not load a package, comment that line of code out with `Ctrl+Shift+C` when on that line, or while highlighting multiple lines.)
 ```{r}
 library(rstatix)
-library(openxlsx) # Needed for Parsing
+library(openxlsx) # Needed for Parsing, those base R has caught up a bit
 library(janitor)
 library(reshape2)
 library(paletteer) # Not necessary
 library(scales) # Not entirely necessary
 library(RColorBrewer) # Not necessary
+library(colorspace) # Necessary only for pairwise plots
 library(emmeans)
 library(multcomp)
 library(multcompView)
@@ -71,13 +72,16 @@ The last line should be a call that tells you the folder where the `here` packag
 These are packages that are helpful in making great plots, but not necessary for this tutorial (and so have been commented out.)
 ```{r}
 # library(ggrepel) # Not necessary
-# library(ggpubr)
+# library(ggpubr
 # library(grid) # I think this is uncessary.
 # library(gtable) # I think ggplot already loads this.
+# library(ggtext) # A great way to get text in plots to have extra formatting
+# library(gg4x) # Fantastic for extra color scales and nested facet plots
 ```
 
 
 As a general tip: the "Environment" tab in the upper right corner of RStudio can be really nice to quickly see what stored objects you have, and what is stored in them by clicking on the blue arrow (to get a drop down summary of structure and conents) or their name (to pop open a new tab, where you can see all of the contents and hover over the column names to see data type.) This is great when trying to figure out what exactly a function (or you) did to your data.
+
 # The Data
 
 These scripts require that you have two things for each plate:
@@ -226,6 +230,8 @@ Note that because of the order of the two lists, the cyan and dark blue color wi
 
 ### The quick plots of all data
 
+These functions are meant to get a quick look at the data. Modifying the plots is easier when you build the plot yourself.
+
 ```{r}
 plot_from_melted_plate_faceted(.data = R1[[2]], colors = eightcolors, title = "Modified RKS, plate 1", yscale = "straight")
 ```
@@ -340,7 +346,7 @@ dfExtended <- df %>% mutate(
 
 Compound naming makes this part super easy. The `separate` function takes a column (here `condition'), looks for the separator on which to split the values (here a hyphen), and then stores them sequentially in the new columns you give it (the `into=` parameter with the list of variables). I would let tell it to keep the original column intact (the `remove=` parameter). The function is smart to expect as many pieces as you give it variables. This example expects 2 hyphpens and three chunks of text for each entry in the `condition` column. It will warn you if there are too many or too few pieces. If you know that there will be discrepencies, you can dictact the funcitons behavior with `drop=` and `fill=` arguments respectively (see the `separate` documentation for more help.)
 
-(This part of code is hypothetical)
+(This part of code is hypothetical and should not be run for the tutorial.)
 ```{r, eval = FALSE}
 dfExtended <- df %>% separate(condition, into = c("First Variable", "Second Variable", "Third Variable"),
                               remove = FALSE,
@@ -363,7 +369,7 @@ df.means <- mean_OD(dfExtended, c("time", "strain", "Buffer", "Ions"))
 nrow(df.means)
 ```
 Note that none of the raw data is in the data frame.  
-To plot this, `bare_meanplot` needs the mean data a (named) color list. It creates an extremely basic ggplot to which you can add faceting, scaling, etc., as it can take a lot of fine-tuning to get a final plot you are happy with. I'm going to store it in a variable, so that I can use it as a base later and add other ggplot layers.
+To plot this, `bare_meanplot` needs the mean data a (named) color list. It creates an extremely basic ggplot to which you can add faceting, scaling, etc., as it can take a lot of fine-tuning to get a final plot you are happy with. I'm going to store it in a variable, so that I can use it as a base later and add other ggplot layers. To view it, just call the its name.
 ```{r}
 means.plot <- bare_meanplot(df.means, eightcolors)
 means.plot
@@ -371,7 +377,7 @@ means.plot
 
 This looks terrible! That's because we have multiple conditions all mixed together, and ggplot is trying to put them in one line.
 
-To break up by conditions, use `facet_wrap` or `facet_grid`. Here I'm also using a `ggsave` to save a copy of the plot as a pdf (the function will adjust appropriately by you just changing the extension  of the file name) with modified dimensions.
+To break up by conditions, use `facet_wrap` or `facet_grid`. Here I'm also using a `ggsave` to save a copy of the plot as a pdf (the function will adjust appropriately by you just changing the extension  of the file name) with modified dimensions. (Again, to save it in a sub-folder, add another item in quotes setoff by a comma in the here call, like `here("asubfolder", "testplot.pdf")`) (Also, if you have the pdf open and are trying to save over it, Rstudio will get mad.)
 ```{r}
 testplot <- means.plot + facet_wrap(Buffer + Ions ~ .)
 testplot
@@ -380,13 +386,14 @@ ggsave(here("testplot.pdf"), testplot, height = 8, width = 6)
 
 Note that the colors stayed consistant with my first plots, and the order changed.
 
-To get fancy, I'd like to trim my x-axis and re-label the faceting variable by both the variable and its value.
+To get fancy, I'd like to trim my x-axis and re-label the faceting variable by both the variable and its value. I'm also going to save fancy, but adding the date into the save name (which can be great if you keep remkaing plots.) Also note that I didn't need to specify the name of the plot object, it's just going to save the last plot called.
 ```{r}
 means.plot +
   scale_x_continuous(limits = c(10, 40)) +
   facet_wrap( Buffer + Ions ~ . , labeller = label_both)
+ggsave(here(paste(Sys.Date(), "testplot.png")), testplot, height = 8, width = 6)
 ```
-
+R will warn you that you are omitting data points.
 
 
 #### For single varaible conditions (and vurther examples of labeling)
@@ -426,12 +433,11 @@ bare_meanplot(df.plateMeans, eightcolors) +
   facet_grid(plate ~ Buffer + Ions, labeller = labeller(Ions = label_both, Buffer = label_both))
 ```
 
-
-More plot options
+There are tons of options! Again, check out the stdha and datanovia pages for any ggplot2 topic.
 
 # Extracting Measurements
 
-
+Looking at curves is great, but now you'd like fitness measurements. So we have to calculate those.
 
 This part relies heavily on the `growthrates` package, with a helpful tutorial [here](https://cran.r-project.org/web/packages/growthrates/vignettes/Introduction.html). Explanations of their different functions and the models they use.
 
@@ -439,23 +445,58 @@ All of them will need a data frame with base-line removed absorbance data, but n
 
 To begin, growth rates gives you two groups of options for models to fit with different pros and cons: simpler "easy linear" and "smoothing splines" or the more complex parametric non-linear models.
 
-## Removing Box effects
 
-It's a good idea to have a cut-off time, beyond which you will ignore the data. This typically affects ODs after the cultures reach stationary phase, as dips, sudden take-offs, and erratic readings can throw off the fitting or not necessarily be representative of what the population is doing/more an artifact of growth in a 96-well plate.
+## Calculating AUCs
 
-This could be difficult to set if your strains reach stationary phase at different times, and should be evaluated per exeriment.
+Typically you will calculate one AUC for the whole curve, but in some instances you may only wish to look at part of the growth curve. We are using AUC as a proxy for fitness, so you can decide what makes sense for you. Here we're only looking at 24 and 36 hours even though I know WT goes up to 48 hours because fitness at 24 hours is important experimentally for me, and then 36 gives a fuller look at fitness disparity. Going beyond the time when the mutants hit carrying capacity is somewhat "unfair": area-under-the-curve gives more weight to higher ODs a faster times (even though once they hit stationary phase, they are not doing a whole lot.)
 
-For the example purposes, I'm going to set the cutoff time to be 36 hous: some have defintely reached stationary, while others are just approaching.
+These are two different functions that calcualte AUC up until different points that we will run for each well.
+```{r}
+auc24 <- function(df){
+  df24 <- subset(df, time <= 24)
+  auc <- AUC(df24$time, df24$OD.corrected)
+  return(as.numeric(auc))
+}
+auc36 <- function(df){
+  df36 <- subset(df, time <= 36)
+  auc <- AUC(df36$time, df36$OD.corrected)
+  return(as.numeric(auc))
+}
+```
+
+To calcualte the AUCs,  will make use of a nesting function: for each unique condition/strain/plate/rep/sample_name combo (aka each well), it will make one row, and nest all of the experimental data as a table/frame (`time`, `OD`, and `OD.corrected`) in an entry in the column called `data`. Then it will use the `map()` function to apply the auc functions to the nested tables at each row, and store the output in `auc24` or `auc36`. I also realized that the entries in the `rep` column weren't stored as numbers, but as characters.
+
+```{r}
+df.nest <- dfExtended %>%
+  dplyr::group_by(condition, strain, plate, rep, sample_name) %>%
+  nest(data = c(time, OD, OD.corrected)) %>%
+  mutate(auc24 = map(data, auc24),
+         auc36 = map(data, auc36),
+         rep = as.numeric(rep)) %>%
+  ungroup(condition, strain, plate, rep, sample_name)
+```
+
+Note that these are empircial AUCs: we fit the area under raw data points, not under a fitted curve. Now that we have the AUCs calculated, onto the other parameters that we are going to get from fitted curves.
+
+## Fitting Growth Curves and Extracting Parameters
+
+### Removing Box effects when fitting curves
+
+It's a good idea to have a cut-off time, beyond which you will ignore the data when fitting curves. This typically affects ODs after the cultures reach stationary phase, as dips, sudden take-offs, and erratic readings can throw off the fitting or not necessarily be representative of what the population is doing/more an artifact of growth in a 96-well plate.
+
+For the example purposes, I'm going to set the cutoff time to be 48 hours because WT is so slow for me, that to fit an accurate curve, it will need all of the data points. If your curves hit stationary at extremely different times, it may be worthwhile considering different cutoff times for different conditions/strains. (I could stand it do it for this set.)
 
 ```{r}
 dfExtended.trim <- filter(dfExtended, time <= 36)
 ```
 
-## Fitting Growth Curves and Extracting Parameters
 
 For these to work, we're not going to look at base-line corrected values; some of the fitting functions use logarithmic transformations and 0-values cause problems.
 
-As a note, the fitting can take several minutes, so don't be alarmed if Rstudio appears to be stuck evaluating. 
+As a note, the fitting can take several minutes, so don't be alarmed if Rstudio appears to be stuck evaluating. (I try to close open programs before running these.)
+
+These use a formula format to figure out what is x and y, and what grouping variables are important.
+In the following examples `OD` is the y, `time` is the x, and everything after the vertical pipe `|` are the groupings we care about. Here the combination of strain, plate, replicate, Buffer condition, and Ion condition make it so that we are fitting one curve per well/growth curve. If we were to only have `strain + Buffer + Ions` after the pipe, the fitting functions would be "averaging" all of the replicates across all of the plates, by fitting one curve to 9 different OD values at each time point, because we did not specify that the `plate` and `rep` variables were important groupings.
 
 ### Easy linear and smoothing splines
 
@@ -463,7 +504,7 @@ The easiest to fit, but which give the least info are the "easy linear" and "sim
 
 The function itself returns the *fit* and not the parameters or a table, which can take a little getting used to.
 ```{r}
-rates.easy <- all_easylinear(OD ~ time | sample_name,
+rates.easy <- all_easylinear(OD ~ time | strain + plate + rep + Buffer + Ions,
                                   data = dfExtended.trim, grouping = strain, spar = 0.5, time = "time", y = "OD")
 ```
 
@@ -487,60 +528,686 @@ mumax = maximum growth rate
 K = carrying capacity
 lambda = lag time in hours
 
-Because of how numerical fitting works, we have to give the function starting estimates of what we think each parameter should be, and also constraints on the parameters of what is unreasonable. If you see numbers that are bumping up against your limits, try tweaking the other intial parameters.
+Because of how numerical fitting works, we have to give the function starting estimates of what we think each parameter should be, and also constraints on the parameters of what is unreasonable. Pick these number based on your original plots of the curves. `mumax` can be hard to guess, but it's typically between 0.1 and 5. 
 
-We are also going to fit this
-
-*numbers need adjusted and condition added*
 (Note that this example chooses to fit log transformed data, which tends to ensure the log-phase growth is well fit, but not necessarily the stationary phase. Try out `transform = "none"` to see what looks best.)
 ```{r}
 ## initial parameters and box constraints
-p   <- c(y0 = 0.1, mumax = .2, K = 2, lambda = 4)
+p   <- c(y0 = 0.1, mumax = .2, K = 2, lambda = 10)
 
-lower   <- c(y0 = 0.001, mumax = 0.01, K = 1, lambda = 2)
-upper   <- c(y0 = 0.3, mumax = 2, K = 5, lambda = 8)
+lower   <- c(y0 = 0.001, mumax = 0.01, K = 1, lambda = 5)
+upper   <- c(y0 = 0.3, mumax = 2, K = 5, lambda = 24)
 
 ## fit growth models to all data using log transformed residuals
 many_gompertz1 <- all_growthmodels(
-                   OD ~ grow_gompertz3(time, parms) | strain + rep,
+                   OD ~ grow_gompertz3(time, parms) | strain + plate + rep + Buffer + Ions,
                    data = dfExtended.trim,
                    p = p, lower = lower, upper = upper,
                    transform = "log", ncores = 2)
 ```
 
-Now we're going to re-fit to try to hone in even more. This is the opportunity to adjust the lag time (lambda). You might want to do this if you don't expect lag to be changing very much, so as to re-focus where the parameters should be changing. It will help disentangle the interplay between growth rate (mumax) and lag (lambda). You would do this by un-commenting the second `pp` line, to explicitly define the `lambda` value to whatever is in the ballpark of what you think it should be.
+Now we're going to re-fit to try to hone in even more. This is the opportunity to adjust the lag time (lambda) to whatever is in the ballpark of what you think it should be based on the original plots.. You might want to do this if you don't expect lag to be changing very much, so as to re-focus where the parameters should be changing. It will help disentangle the interplay between growth rate (mumax) and lag (lambda), which you can imagine as vertical line crossing the x-axis at, say, 10. Rotating the line clockwise (making the slope less steep) will move the x-intercept (or lag) away from 10 and towards 0.
 ```{r}
 ## use coefficients of first fit as new initial parameters
 pp   <- coef(many_gompertz1)
-# pp[, "lambda"] <- 0.65
+pp[, "lambda"] <- 17 # This line re-aligns the lag to the ballpark you can see it at in the original plots.
 
 ## re-fit models
 many_gompertz2 <- all_growthmodels(
-                   OD ~ grow_gompertz3(time, parms) | strain + rep,
-                   data = dfxtended.trim,
+                   OD ~ grow_gompertz3(time, parms) | strain + plate + rep + Buffer + Ions,
+                   data = dfExtended.trim,
                    p = pp, lower = lower, upper = upper,
                    transform = "log", ncores = 2)
 ```
 
+To store the fits in a matrix/data table format, we extract them with `results()`.
+The `View()` function is similar to clicking the varialbe name in the Environment window. If you see numbers that are bumping up against your limits, go back and try tweaking the other intial parameters.
 ```{r}
-df.co.gompertz <- results(many_gompertz2)
+df.params <- results(many_gompertz2)
+nrow(df.co.gompertz)
 View(df.co.gompertz)
 ```
 
+There are as many rows as there are wells. So this next call is going to make 270 plots if we let it. When you are evaluating your own data, it can be good to look at each of them. Here I only want to give examples, so I subset with `[]` and a range.
 ```{r}
-plot(many_gompertz2)
+plot(many_gompertz2[10:15])
+```
+They look pretty good, but it's also a good idea to peak at the residuals to get an idea of the goodness of the fits. You're looking for linear, and centered about 0.
+
+```{r}
+plot(residuals(many_gompertz2))
+```
+There are some not so great residuals in there.
+
+We can look at the worst fits:
+```{r}
+resids <- residuals(many_gompertz2)
+names(head(resids[order(resids)], 25))
+names(tail(resids[order(resids)], 25))
+```
+These all come from the same conditions (which are hard to decipher from how I named my two condition variables), but it's the CSH Buffer, RKS Ions combo, which the media crashed. So these make sense to me, and I'm not worried.
+
+The spread of the r-squared values, which the closer to 1 the better the fit.
+```{r}
+ggplot(df.params, aes(r2)) +
+  geom_freqpoly(binwidth = 0.0001)
+```
+These look great.
+
+Just going to do some tidying of the parameter data frame to match the factorizing from before.
+```{r}
+df.params <- df.params %>% mutate(
+  strain = factor(strain, levels = c("WT", "A244T", "N274Y", "N445K", "P421L", "tRNA-Ile2"), ordered = TRUE),
+  Buffer = factor(Buffer, levels = c("RKS", "CSH"), ordered = TRUE),
+  Ions = factor(Ions, levels = c("RKS", "CSH"), ordered = TRUE)
+)
 ```
 
+
+## Joining and saving the data
+
+This can be a good time to save the data you have externally. So we'd like to combine the AUCs with the extracted parameters for each well. We'll ignore the nested experimental data from the data frame with the AUCs, and join it to the parameter data frame, and specifying the names of which varialbes need to line up. (The factorizing we did before is improtant to get these data frames to join well.)
+
+```{r}
+df.measures <- full_join(
+  df.nest %>% select(-data),
+  df.params,
+  by = c("strain", "plate", "rep", "Buffer", "Ions" )
+)
+
+write.xlsx(file = here(paste0("calculated_GCmeasures_", Sys.Date(), ".xlsx")), df.measures)
+```
 
 # Analysis
 
-General anova first.
+We are going to take advantage of the fact that R is good for vectorizing functions to perform multiple anovas (one for each measurement) at the same time.
 
-## Across all samples, within a condition. (For all conditions.)
+(Note that there are more in depth comparisons you can do that consider each variable in different ways.)
+
+## Within a condition, compare all of the strains. (For all conditions.)
+
+There's a lot of stuff in that measures data frame, but we only want to analyse certain measures. We're going to prep by taking what we want, shifting to long format from wide, and nesting again.
+
+```{r}
+coef.interest <- coef.interest <- c("auc24", "auc36", "mumax", "K", "lambda")
+df.measures.nest <- df.measures %>%
+  select(strain, Buffer, Ions, condition, sample_name, auc24, auc36, mumax, K, lambda) %>%
+  pivot_longer(cols = all_of(coef.interest), names_to = "measures", values_to = "values") %>%
+  group_by(measures) %>%
+  nest() %>%
+  ungroup(measures)
+```
+
+Again, we're going to use the `map()` function to:
+
+1. Perform anovas (or aovs) on each nested data frame at each row, where it takes into account all variables (`strain`, `Buffer`, `Ions`) Note that I have put the variable I believe has the greatest affect first: `strain`. Then the next, `Buffer` and last `Ions`.
+2. Run means tests (mt) with the output from each of those anovas, but looking at strain for each combination of `Buffer` and `Ions`. It's using a Sidak method of adjusting. Again I put the variable I think has the most effect first after the pipe.
+3. Give us a shorthand way of looking at significant grouping with "compact letter displays" (cld), cut alpha cutoff of 0.05. Again Sidak adjustment.
+
+(We are kind of getting ahead of ourselves with the means testing before knowing if there is signficance, but we will look at them.)
+(The `emmeans` documentation and mutliple tutorial pages go more into adjustment methods.)
+
+```{r}
+df.aovs <- df.measures.nest %>% mutate(
+  aovs = map(data, ~aov(values ~ strain*Buffer*Ions, data = .x)),
+  mt.byConds = map(aovs, ~emmeans(.x, pairwise ~ strain|Buffer*Ions, type = "response", adjust = "sidak")), 
+  clds.byConds = map(mt.byConds, ~cld(.x[[1]], alpha = 0.05, adjust = "sidak"))
+)
+```
+Note, trying to view df.aovs almost crashes Rstudio.
+
+We can look at the overall results of the anovas. They are going to display in the same order as the rows of the data frame. (So here, auc24 is first, lambda is last.)
+```{r}
+df.aovs$measures
+lapply(df.aovs$aovs, summary)
+```
+
+We are OK to look at the means testing. And there is a lot to try to get from these results just looking, but let's plot.
+
+### Some things we will need
+
+Labeling is going to require linking what the meausrements are called in our data frames (like `auc24`) to how we actually would like them displayed. That display unfortunately can require some `plotmath` and `expression` shennanigans.
+
+Most importantly though, there are as many expression-style list entries in `measure.labels` as there are measures what we did calculations for, AND they get assigned names that match to the data frame entries.
+
+If you change what times you calcualte the AUCs at, make sure to change the labels, and the names.
+```{r}
+measure.labels <- c("'AUC,'~24~h~(AU%*%h)",
+                    "'AUC,'~36~h~(AU%*%h)", "Lag~(h)",
+                    "Capacity~(AU)",
+                    "v[max]~scriptstyle(bgroup( '(', frac('AU', 'h'), ')' ))")
+names(measure.labels) <- c("auc24", "auc36", "lambda", "K", "mumax")
+```
+
+
+This next part are functions that I made it try to keep from typing the same formatting of factorized variables. These are specific to my strains and entries, but can be modified to what you have. Make sure the `levels = ` list exactly match all of the unique entries in the variable you are factorizing. If you'd like to change how they display, you can also add a `labels = ` call, with a list in the same order as the `levels` but what you'd like them replaced with.
+```{r}
+# Takes a vector/list
+plot_format.strains <- function(vec){
+  vec <- factor(vec, levels = c("WT", "A244T", "N274Y", "N445K", "P421L", "tRNA-Ile2"), ordered = TRUE)
+  return(vec)}
+
+#Takes a whole data frame and modifies specific columns
+plot_format.factorialconds <- function(df){
+  df %>% mutate(
+    Buffer = factor(Buffer, levels = c("RKS", "CSH"), ordered = TRUE),
+    Ions = factor(Ions, levels = c("RKS", "CSH"), ordered = TRUE),
+    strain = factor(strain, levels = c("WT", "A244T", "N274Y", "N445K", "P421L", "tRNA-Ile2"), ordered = TRUE))
+}
+```
+
+Colors! I love colors! I'm coloring by strain, so I need 6 colors. And then I name them again.
+```{r}
+sixcolor <- paletteer_c("viridis::viridis", 6)
+names(sixcolor) <- unique(dfExtended$strain)
+```
+
+
+"Raw" data points from the calcualted values put into long format, which ggplot2 likes better.
+```{r}
+plotdf.data <- df.measures %>% ungroup() %>%
+  pivot_longer(cols = coef.interest, names_to = "measures", values_to = "values")
+```
+
+When we go to label the plots with the letters, we need to tell ggplot what y-position to put them at.
+
+First, we're going to group our data by what variables are important to us for plotting (I want points of the same strain, measure, and condition(which is a Buffer and Ions combo) to plot together). Then we're going to find the maximum value within that group, store it as a number, and factorize the whole data frame. Note that this data frame will have as many rows as we have measure/strain/Buffer/Ions combinations. (5 x 6 x 2 x 2)
+```{r}
+df.maxes <- plotdf.data %>%
+  group_by(measures, condition, strain, Buffer, Ions) %>%
+  summarize(maxes = max(values), .groups = "keep") %>%
+  mutate(maxes = as.numeric(maxes)) %>%
+  ungroup(c(measures, condition, strain, Buffer, Ions)) %>%
+  plot_format.factorialconds
+```
+
+Now we define a function that looks at the maximum, and depending on what measure it's looking at, it adds a value to put the label above the biggest value. You should adjust the actual numbers for what makes sense for your data.
+```{r}
+add_label_ypos <- function(df){
+  df  %>%
+    mutate(label.start = case_when(
+    maxes > upper.CL ~ maxes,
+    TRUE ~ upper.CL
+  ),
+  y.position = label.start + case_when(
+    measures == "auc24" ~ 0.4,
+    measures == "auc36" ~ 1.6,
+    measures == "mumax" ~ 0.03,
+    measures == "lambda" ~ 1,
+    measures == "K" ~ 0.2))
+}
+```
+
+Now we actually use this function, the factorizing function, and another in the parse_96wellGrowth script that reformats the cld output to create a data frame that can plot the means, confidence intervals, and the CLDs. This can be a good data frame to save, too.
+```{r}
+df.cld <- df.aovs %>% select(measures, clds.byConds) %>%
+  unnest(clds.byConds) %>%
+  mutate(.group.letter = lettersub(.group)) %>%
+  plot_format.factorialconds
+
+df.cld.plot <- full_join(df.cld, df.maxes,
+                                 by = c("strain", "measures", "Buffer", "Ions")) %>%
+  add_label_ypos
+
+write.xlsx(file = here(paste0("calculated_GCmeasures_CLDs_", Sys.Date(), ".xlsx")), df.cld.plot)
+```
+
+
+### The measure plot
+
+This is a beast, so I tried to include a lot of notes.
+
+```{r}
+measureplot.conditions <- ggplot(data = df.cld.plot, aes(x = strain, color = strain)) +
+  
+  # This is me highlighting a sepecific plot
+  geom_rect(data = subset(df.cld.plot, condition == "RKS"),
+            # fill = "#757575", alpha = 0.2,
+            fill = NA,
+            colour = "black",
+            xmin = -Inf,xmax = Inf,
+            ymin = -Inf,ymax = Inf) +
+  
+  # Define the colors
+  scale_color_manual(values = sixcolor) +
+  
+  # You may or may not need this line
+  scale_x_discrete(drop = FALSE) +
+  
+  # Plots the points
+  geom_jitter(data = plotdf.data,
+              mapping = aes(x = strain, y = values, color = strain),
+              width = 0.25) + # This bit tells it how far apart the points can move
+  
+  # Add the means, error bars, and CLDs
+  geom_errorbar(aes(y=emmean, ymin=lower.CL, ymax=upper.CL), color = "white",
+                size = 0.6, width = 0.3, alpha = 0.9) +
+  geom_point(aes(y = emmean),size = 1.5, color = "white") +
+
+  geom_text(aes(y=y.position, label=.group.letter,
+                color = strain)) +
+
+  scale_y_continuous(position = "left", sec.axis = dup_axis()) + # Duplication to split title from scale
+  
+  # This defining how to facet, and also telling it how to process the labeling
+  # for each label I'm faceting by. as_labeller and label_parsed tell it to use a parsing function
+  # to get the fancy formatting in the list of labels.
+  # The Buffer and Ions label_both tells it to display the variable name as well as value.
+  facet_grid(measures~ Ions + Buffer, scales = "free_y", switch = "y",
+             labeller = labeller(measures = as_labeller(measure.labels, label_parsed),
+                                 Buffer = label_both, Ions = label_both))  +
+  ylab("Measure") +
+  
+  theme_dark() +
+  
+      theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        plot.title = element_text(margin = margin(b = 10)),
+
+        axis.title.y.left = element_text(margin = margin(r = 8)), # These are all to split the axis title and labels
+        axis.title.y.right = element_blank(),
+        axis.text.y.left = element_blank(),
+        axis.ticks.y.left = element_blank(),
+
+        axis.text.x = element_text(angle = 50, hjust = 1),
+        # axis.ticks.x = element_blank(),
+        # axis.title = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 12),
+        plot.caption = element_text(lineheight = 0.5),
+        # panel.background = element_rect(fill = "grey65"),
+        # panel.background = element_rect(fill = "grey65", color = "black"),
+        # strip.background = element_rect(fill = "white", color = "black"),
+        legend.position = "none") # I have turned off the legend
+measureplot.conditions
+```
+
+Look into the ggplot2 tutorials if you wish to change the coloring of the panels and grids, etc. I've turned certain things "off" with `element_blank()` or "none" for the legend.
+
+You can save again:
+```{r}
+ggsave(here(paste0("measurePlot_byCondition_", Sys.Date(), ".png")), measureplot.conditions,
+       width = 8, height = 10)
+```
+
+The CLDs can be nice, but might not show the complete picture.
+
+### The signficance plot
+
+You can see the pairwise comparisons better with a bit of heat map.
+
+This next bit manipulates the aovs to extract the pairwise comparisons, and tests for signficance. I've highlighted what my need to change for your conditions. (I've simplified the two-variable condition, back down to a 1-variable condition.)
+
+```{r}
+pairwise.byConds <- df.aovs %>% select(measures, mt.byConds) %>%
+  mutate(cons = map(mt.byConds, ~ .$contrasts %>% summary(infer = TRUE) %>% as.data.frame)) %>%
+  select(-mt.byConds) %>% unnest(cons) %>%
+  separate(contrast, into = c("var1", "var2"), sep = " - ") %>%
+  mutate(var2 = gsub("[()]", "", var2),
+         signif = case_when(p.value < 0.05 ~ "is",
+                            p.value >= 0.05 ~ "not"),
+         var1 = plot_format.strains(var1),
+         var2 = plot_format.strains(var2),
+         `P-value` = format(round(p.value, 3), 3),
+         diff = round(estimate, 3),
+         condition = interaction(Ions,Buffer) # Might need to change for your conditions
+  )
+```
+
+Now, we extract the estimated marginal means as a data frame. (Again simplifying a 2-variable condition into 1.)
+```{r}
+df.byConds.means <- df.aovs %>%
+  mutate( em = map(mt.byConds, ~ .$emmeans %>% as.data.frame)) %>%
+  select(measures, em) %>% unnest(em) %>%
+  mutate(em = round(emmean, 3),
+         condition = interaction(Ions, Buffer)) # Might need to change for you
+```
+
+
+For this heat map, it's also good to consider two different coloring schema. One lets the color extremes be defined by max/min just within a measure, the second defines the extremes for each condition. And it flips the color direction of the lag varaible `lambda` because smaller lag is greater fitness (opposite from the rest.)
+
+So we define functions to adjust color values, and then apply it to differently grouped data frames:
+```{r}
+scale_values <- function(x){
+  x/max(abs(x))
+}
+pairwise.byConds <- pairwise.byConds %>%
+  group_by(measures) %>%
+  mutate(scaled.diff = scale_values(diff)) %>% ungroup(measures) %>%
+  mutate(scaled.diff = case_when(measures == "lambda" ~ 0 - scaled.diff,
+                                 TRUE ~ scaled.diff)) %>%
+  group_by(measures, condition) %>%
+  mutate(scaled.diff2 = scale_values(diff)) %>% ungroup(measures, condition) %>%
+  mutate(scaled.diff2 = case_when(measures == "lambda" ~ 0 - scaled.diff2,
+                                  TRUE ~ scaled.diff2))
+```
+
+Ok, now the actual heat map plot.
+
+
+First, colors scaled to all measures seen. (You can comment/uncomment out the different color scales to get an idea of other options.) Also palette options for the divergingx call can be: ArmyRose, Earth, Fall, Geyser, TealRose, Temps, Tropic, PuOr, RdBu, RdGy, PiYG, PRGn, BrBG, RdYlBu, RdYlGn, Spectral, Zissou 1, Cividis, Roma.
+```{r}
+pairwiseplot.conditions <- ggplot(pairwise.byConds,  aes(var2, var1)) +
+  
+  geom_text(data = df.byConds.means,
+            aes(x = strain, y = strain, label = em),
+            size = 2, color = "black", fontface = "bold") +
+  
+  # I played with different color scales
+  
+  scale_fill_continuous_divergingx(palette = "Geyser", mid = 0, guide = FALSE) +
+  # scale_fill_gradient2(high = "blue3", mid = "green", low = "red", midpoint = 0, guide = FALSE) +
+  
+  
+  geom_tile(data = . %>% filter(signif == "is"), aes(fill = scaled.diff), color = "white") +
+  
+  geom_text(data = . %>% filter(signif == "not"),
+            aes(label = diff), color = "grey75", size = 2,  na.rm = TRUE) +
+  geom_text(data = . %>% filter(signif == "is"),
+            aes(label = diff), color = "white", size = 2,  na.rm = TRUE) +
+
+  
+  # guides(fill = FALSE, color = FALSE) +
+  scale_y_discrete(limits = rev) +
+  ylab("Measure") +
+  labs(caption = "Means on diagonal. Differences listed above, with strain on the left compared to condition on the bottom.
+       Tiles with significant differences within a condition have been filled in.
+       Means testing adjusted by Sidak method, after two-way ANOVA with a cutoff of 0.05.") +
+  facet_grid(measures ~ Buffer + Ions, labeller = labeller(measures = as_labeller(measure.labels, label_parsed),
+                                                                          .cols = label_both), switch = "y") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 50, hjust = 1),
+        axis.title.y.left = element_text(margin = margin(r = 8)), # These are all to split the axis title and labels
+        axis.text.y = element_text(margin = margin(l = 4)),
+        panel.grid = element_blank(),
+        axis.title.x = element_blank(),
+        strip.placement = "outside")
+pairwiseplot.conditions
+```
+
+Changing just the `fill = scaled.diff2` in the `geom_tile` layer, will switch to coloring scaled within a condition and measure. This data set is not extremely obvious, bt the top right plot maybe shows it best.
+```{r}
+pairwiseplot.conditions.2 <- ggplot(pairwise.byConds,  aes(var2, var1)) +
+  
+  geom_text(data = df.byConds.means,
+            aes(x = strain, y = strain, label = em),
+            size = 2, color = "black", fontface = "bold") +
+  
+  # I played with different color scales
+  scale_fill_continuous_divergingx(palette = "Geyser", mid = 0, guide = FALSE) +
+  # scale_fill_gradient2(high = "blue3", mid = "green", low = "red", midpoint = 0, guide = FALSE) +
+  
+  
+  geom_tile(data = . %>% filter(signif == "is"), aes(fill = scaled.diff2), color = "white") +
+  
+  geom_text(data = . %>% filter(signif == "not"),
+            aes(label = diff), color = "grey75", size = 2,  na.rm = TRUE) +
+  geom_text(data = . %>% filter(signif == "is"),
+            aes(label = diff), color = "white", size = 2,  na.rm = TRUE) +
+
+  
+  # guides(fill = FALSE, color = FALSE) +
+  scale_y_discrete(limits = rev) +
+  ylab("Measure") +
+  labs(caption = "Means on diagonal. Differences listed above, with strain on the left compared to condition on the bottom.
+       Tiles with significant differences within a condition have been filled in.
+       Means testing adjusted by Sidak method, after two-way ANOVA with a cutoff of 0.05.") +
+  facet_grid(measures ~ Buffer + Ions, labeller = labeller(measures = as_labeller(measure.labels, label_parsed),
+                                                                          .cols = label_both), switch = "y") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 50, hjust = 1),
+        axis.title.y.left = element_text(margin = margin(r = 8)), # These are all to split the axis title and labels
+        axis.text.y = element_text(margin = margin(l = 4)),
+        panel.grid = element_blank(),
+        axis.title.x = element_blank(),
+        strip.placement = "outside")
+pairwiseplot.conditions.2
+```
+
+I prefer to NOT scale between conditions, so you get a better comparison among all conditions.
+
+```{r}
+ggsave(here(paste0("pairwiseHeatMap_byCondition_", Sys.Date(), ".png")), pairwiseplot.conditions,
+       width = 12, height = 9)
+```
+
+
+You can mirror the values/colors the whole way across the plot, which can be nicer to read when trying to interpret your data, but more confusing as well.
+
+```{r}
+pairwiseplot.conditions.mirror <- ggplot(pairwise.byConds,  aes(var2, var1)) +
+  
+  geom_text(data = df.byConds.means,
+            aes(x = strain, y = strain,label = em),
+            size = 2, color = "black", fontface = "bold") +
+  scale_fill_continuous_divergingx(palette = "Geyser", mid = 0, guide = FALSE) +
+  # scale_fill_gradient2(high = "blue3", mid = "green", low = "red", midpoint = 0) +
+  
+  geom_tile(data = . %>% filter(signif == "is"), aes(fill = scaled.diff), color = "white") +
+  
+  geom_text(data = . %>% filter(signif == "not"),
+            aes(label = diff), color = "grey75", size = 2,  na.rm = TRUE) +
+  geom_text(data = . %>% filter(signif == "is"),
+            aes(label = diff), color = "white", size = 2,  na.rm = TRUE) +  
+  
+  # Mirror
+  geom_tile(data = . %>% filter(signif == "is"), aes(x = var1, y = var2,
+                                                     fill = 0 -scaled.diff), color = "white") +
+  geom_text(data = . %>% filter(signif == "not"),
+            aes(x = var1, y = var2,
+                label = 0 - diff), color = "grey75", size = 2,  na.rm = TRUE) +
+  geom_text(data = . %>% filter(signif == "is"),
+            aes(x = var1, y = var2,
+                label = 0 - diff), color = "white", size = 2,  na.rm = TRUE) +
+
+  
+  # guides(fill = FALSE, color = FALSE) +
+  scale_y_discrete(limits = rev) +
+  ylab("Measure") +
+  labs(caption = "Means on diagonal. Differences listed above, with strain on the left compared to condition on the bottom.
+       Tiles with significant differences within a condition have been filled in.
+       Means testing adjusted by Sidak method, after two-way ANOVA with a cutoff of 0.05.") +
+  facet_grid(measures ~ Buffer + Ions, labeller = labeller(measures = as_labeller(measure.labels, label_parsed),
+                                                                          .cols = label_both), switch = "y") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 50, hjust = 1),
+        axis.title.y.left = element_text(margin = margin(r = 8)), # These are all to split the axis title and labels
+        axis.text.y = element_text(margin = margin(l = 4)),
+        panel.grid = element_blank(),
+        axis.title.x = element_blank(),
+        strip.placement = "outside")
+pairwiseplot.conditions.mirror
+```
+I like this one the best
+
+```{r}
+ggsave(here(paste0("pairwiseHeatMap_byCondition_mirrored_", Sys.Date(), ".png")), pairwiseplot.conditions.mirror,
+       width = 12, height = 9)
+```
+
 
 ## Across all conditions, within a sample. (For all samples.)
 
+To do this is very similar to what we just did. We don't need to re-do the anovas, but now calculate new means test. This formula is saying "at every level of `strain`, consider each combination of `Ions` and `Buffer`.
+(Other possible tests are controlling for Buffer and strain: ` ~ Ions|Buffer*strain` or by Ions and strain ` ~ Buffer|Ions*strain`)
+
+The labeling of the plots will take a little more work, too. I haven't quite figured this part out yet.
+
+So we modfiy the same aova data frame, and add more means tests and clds.
+
 ```{r}
+df.aovs <- df.aovs %>% mutate(
+  mt.byStrains = map(aovs, ~emmeans(.x, pairwise ~ Ions*Buffer|strain, type = "response", adjust = "sidak")), #Within a strain, look at conditions
+  clds.byStrains = map(mt.byStrains, ~cld(.x[[1]], alpha = 0.05, adjust = "sidak"))
+)
 ```
 
-## Plotting
+
+### The jittered measurement plot
+
+Now we only have 4 conditions to color over.
+
+```{r}
+fourcolor <- paletteer_d("LaCroixColoR::PassionFruit", 5)[c(1,3,4,5)]
+names(fourcolor) <- unique(interaction(df.cld.byStrains$Buffer, df.cld.byStrains$Ions))
+```
+
+```{r}
+df.cld.byStrains <- df.aovs %>% select(measures, clds.byStrains) %>%
+  unnest(clds.byStrains) %>%
+  mutate(.group.letter = lettersub(.group)) %>%
+  plot_format.factorialconds
+
+df.cld.byStrain.plot <- full_join(df.cld.byStrains, df.maxes,
+                                 by = c("strain", "measures", "Buffer", "Ions")) %>%
+  add_label_ypos
+
+measureplot.strains <- ggplot(data = df.cld.byStrain.plot, aes(x = interaction(Buffer, Ions),
+                                                               color = interaction(Buffer,Ions))) +
+  # Define the colors
+  scale_color_manual(values = fourcolor, name = "Buffer.Ions") +
+  
+  # You may or may not need this line
+  scale_x_discrete(drop = FALSE) +
+  
+  # Plots the points
+  geom_jitter(data = plotdf.data,
+              mapping = aes(x = interaction(Buffer, Ions), y = values, color = interaction(Buffer, Ions)),
+              width = 0.25) + # This bit tells it how far apart the points can move
+  
+  # Add the means, error bars, and CLDs
+  geom_errorbar(aes(y=emmean, ymin=lower.CL, ymax=upper.CL), color = "black",
+                size = 0.6, width = 0.3, alpha = 0.9) +
+  geom_point(aes(y = emmean),size = 1.5, color = "black") +
+
+  geom_text(aes(y=y.position, label=.group.letter,
+                color = interaction(Buffer, Ions)), show.legend = FALSE) +
+
+  scale_y_continuous(position = "left", sec.axis = dup_axis()) + # Duplication to split title from scale
+  
+  # This defining how to facet, and also telling it how to process the labeling
+  # for each label I'm faceting by. as_labeller and label_parsed tell it to use a parsing function
+  # to get the fancy formatting in the list of labels.
+  # The Buffer and Ions label_both tells it to display the variable name as well as value.
+  facet_grid(measures~ strain, scales = "free_y", switch = "y",
+             labeller = labeller(measures = as_labeller(measure.labels, label_parsed)))  +
+  ylab("Measure") +
+  
+  
+      theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        plot.title = element_text(margin = margin(b = 10)),
+
+        axis.title.y.left = element_text(margin = margin(r = 8)), # These are all to split the axis title and labels
+        axis.title.y.right = element_blank(),
+        axis.text.y.left = element_blank(),
+        axis.ticks.y.left = element_blank(),
+
+        axis.text.x = element_text(angle = 50, hjust = 1),
+        # axis.ticks.x = element_blank(),
+        # axis.title = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 12),
+        plot.caption = element_text(lineheight = 0.5),
+        # panel.background = element_rect(fill = "grey65"),
+        # panel.background = element_rect(fill = "grey65", color = "black"),
+        # strip.background = element_rect(fill = "white", color = "black")
+        )
+measureplot.strains
+```
+
+This is a little harder to read for this data. I included the legend/guide to help with labeling... but.. yeah.
+
+### The significance plots
+
+Ok, extracting data again. There is more separating this time, because extra variables were in the contrasts.
+```{r}
+pairwise.byStrains <- df.aovs %>% select(measures, mt.byStrains) %>%
+  mutate(cons = map(mt.byStrains, ~ .$contrasts %>% summary(infer = TRUE) %>% as.data.frame)) %>%
+  select(-mt.byStrains) %>% unnest(cons) %>%
+  separate(contrast, into = c("var1", "var2"), sep = " - ") %>%
+  separate(var1, into = c("var1.Ions", "var1.Buffer"), sep = " ") %>%
+  separate(var2, into = c("var2.Ions", "var2.Buffer"), sep = " ") %>%
+  mutate(across(c(var1.Buffer, var2.Buffer, var1.Ions, var2.Ions),
+                ~ factor(.x, levels = c("RKS", "CSH"), ordered = TRUE)),
+         signif = case_when(
+           p.value < 0.05 ~ "is",
+           p.value >= 0.05 ~ "not"),
+         `P-value` = format(round(p.value, 3), 3),
+         diff = round(estimate, 3)
+  )
+```
+
+
+Oh yeah, also need the actual means.
+```{r}
+df.byStrains.means  <- df.aovs %>%
+  mutate( em = map(mt.byStrains, ~ .$emmeans %>% as.data.frame)) %>%
+  select(measures, em) %>% unnest(em) %>%
+  mutate(em = round(emmean, 3),
+         condition = interaction(Buffer, Ions))
+pairwise.byStrains <- pairwise.byStrains %>%
+  group_by(measures) %>%
+  mutate(scaled.diff = scale_values(diff)) %>% ungroup(measures) %>%
+  mutate(scaled.diff = case_when(measures == "lambda" ~ 0 - scaled.diff,
+                                 TRUE ~ scaled.diff)) %>%
+  group_by(measures, strain) %>%
+  mutate(scaled.diff2 = scale_values(diff)) %>% ungroup(measures, strain) %>%
+  mutate(scaled.diff2 = case_when(measures == "lambda" ~ 0 - scaled.diff2,
+                                  TRUE ~ scaled.diff2))
+```
+
+And the plot:
+```{r}
+pairwiseplot.strains <- ggplot(pairwise.byStrains,  aes(x =interaction(var2.Buffer, var2.Ions),
+                                            y = interaction(var1.Buffer, var1.Ions))) +
+  
+  geom_text(data = df.byStrains.means,
+            aes(x = interaction(Buffer, Ions), y = interaction(Buffer, Ions), label = em),
+            size = 2, color = "black", fontface = "bold") +
+  scale_fill_continuous_divergingx(palette = "Fall", mid = 0, guide = FALSE) +
+  # scale_fill_gradient2(high = "blue3", mid = "green", low = "red", midpoint = 0) +
+  
+  #Upper Triangle
+  geom_tile(data = pairwise.byStrains %>% filter(signif == "is"),
+            aes(fill = scaled.diff),
+            color = "white") +
+  geom_text(data = . %>% filter(signif == "not"),
+            aes(label = diff), color = "grey75", size = 2,  na.rm = TRUE) +
+  geom_text(data = . %>% filter(signif == "is"),
+            aes(label = diff), color = "white", size = 2,  na.rm = TRUE) +
+  
+  # Mirrored lower Triangle
+  geom_tile(data = . %>% filter(signif == "is"),
+            aes(x = interaction(var1.Buffer, var1.Ions), y = interaction(var2.Buffer, var2.Ions),
+                fill = 0 -scaled.diff), color = "white") +
+  geom_text(data = . %>% filter(signif == "not"),
+            aes(x = interaction(var1.Buffer, var1.Ions), y = interaction(var2.Buffer, var2.Ions),
+                label = 0 - diff), color = "grey75", size = 2,  na.rm = TRUE) +
+  geom_text(data = . %>% filter(signif == "is"),
+            aes(x = interaction(var1.Buffer, var1.Ions), y = interaction(var2.Buffer, var2.Ions),
+                label = 0 - diff), color = "white", size = 2,  na.rm = TRUE) +
+  
+  # guides(fill = FALSE, color = FALSE) +
+  scale_y_discrete(limits = rev) +
+  ylab("Measure") +
+  xlab("Buffer.Ions") +
+  labs(caption = "Means on diagonal. Differences listed above, with condition on the left compared to condition on the bottom.
+       Tiles with significant differences within a condition have been filled in.
+       Means testing adjusted by Sidak method, after two-way ANOVA with a cutoff of 0.05.") +
+  facet_grid(measures ~ strain, labeller = labeller(measures = as_labeller(measure.labels, label_parsed)), switch = "y") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title.y.left = element_text(margin = margin(r = 8)), # These are all to split the axis title and labels
+        axis.text.y = element_text(margin = margin(l = 4)),
+        panel.grid = element_blank(),
+        # axis.title.x = element_blank(),
+        strip.placement = "outside")
+pairwiseplot.strains
+```
+
+# What I have loaded
+```{r}
+sessionInfo()
+```
+

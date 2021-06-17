@@ -50,3 +50,5 @@ parsed/
 testplot.pdf
 *.nb.html
 troubleshooting/
+calculated_GCmeasures_*
+*.png

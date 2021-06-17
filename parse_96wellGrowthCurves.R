@@ -492,3 +492,15 @@ bare_meanplot <- function(df, namedcolors){
     theme(
       strip.text.y = element_text(margin = margin(5, 5, 5, 5, unit = "pt"))) 
 }
+
+# Function to help format the output from cld(), which can be quite messy.
+# It ereases the extra spaces, and replaces the numbers with letters.
+lettersub <- function(chars) {
+  newchars <- gsub(" ", "", chars)
+  newchars <- gsub("1", "a", newchars, fixed = TRUE)
+  newchars <- gsub("2", "b", newchars, fixed = TRUE)
+  newchars <- gsub("3", "c", newchars, fixed = TRUE)
+  newchars <- gsub("4", "d", newchars, fixed = TRUE)
+  newchars <- gsub("5", "e", newchars, fixed = TRUE)
+  newchars <- gsub("6", "f", newchars, fixed = TRUE)
+}
