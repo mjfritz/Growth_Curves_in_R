@@ -51,12 +51,8 @@ library(janitor)
 library(reshape2)
 library(paletteer) # Not necessary
 library(scales) # Not entirely necessary
-library(RColorBrewer) # Not necessary
 library(colorspace) # Necessary only for pairwise plots
 library(emmeans)
-library(multcomp)
-library(multcompView)
-library(DescTools)
 library(growthrates)
 library(tidyverse) # Needed for Parsing
 library(here) # Not necessary, just what I use to make pathing things easier, and only dependent on project sub-folders.
@@ -452,26 +448,28 @@ Typically you will calculate one AUC for the whole curve, but in some instances 
 
 These are two different functions that calcualte AUC up until different points that we will run for each well.
 ```{r}
-auc24 <- function(df){
+calc.auc24 <- function(df){
   df24 <- subset(df, time <= 24)
   auc <- AUC(df24$time, df24$OD.corrected)
   return(as.numeric(auc))
 }
-auc36 <- function(df){
+calc.auc36 <- function(df){
   df36 <- subset(df, time <= 36)
   auc <- AUC(df36$time, df36$OD.corrected)
   return(as.numeric(auc))
 }
 ```
 
-To calcualte the AUCs,  will make use of a nesting function: for each unique condition/strain/plate/rep/sample_name combo (aka each well), it will make one row, and nest all of the experimental data as a table/frame (`time`, `OD`, and `OD.corrected`) in an entry in the column called `data`. Then it will use the `map()` function to apply the auc functions to the nested tables at each row, and store the output in `auc24` or `auc36`. I also realized that the entries in the `rep` column weren't stored as numbers, but as characters.
+To calcualte the AUCs,  will make use of a nesting function: for each unique condition/strain/plate/rep/sample_name combo (aka each well), it will make one row, and nest all of the experimental data as a table/frame (`time`, `OD`, and `OD.corrected`) in an entry in the column called `data`. Then it will use the `map()` function to apply the auc functions to the nested tables at each row, and store the output in `auc24` or `auc36`. (And then force them to be stored as numbers.) I also realized that the entries in the `rep` column weren't stored as numbers, but as characters.
 
 ```{r}
 df.nest <- dfExtended %>%
   dplyr::group_by(condition, strain, plate, rep, sample_name) %>%
   nest(data = c(time, OD, OD.corrected)) %>%
-  mutate(auc24 = map(data, auc24),
-         auc36 = map(data, auc36),
+  mutate(auc24 = map(data, calc.auc24),
+         auc24 = as.numeric(auc24),
+         auc36 = map(data, calc.auc36),
+         auc36 = as.numeric(auc36),
          rep = as.numeric(rep)) %>%
   ungroup(condition, strain, plate, rep, sample_name)
 ```
@@ -564,8 +562,8 @@ To store the fits in a matrix/data table format, we extract them with `results()
 The `View()` function is similar to clicking the varialbe name in the Environment window. If you see numbers that are bumping up against your limits, go back and try tweaking the other intial parameters.
 ```{r}
 df.params <- results(many_gompertz2)
-nrow(df.co.gompertz)
-View(df.co.gompertz)
+nrow(df.params)
+# View(df.params)
 ```
 
 There are as many rows as there are wells. So this next call is going to make 270 plots if we let it. When you are evaluating your own data, it can be good to look at each of them. Here I only want to give examples, so I subset with `[]` and a range.
@@ -629,10 +627,9 @@ We are going to take advantage of the fact that R is good for vectorizing functi
 There's a lot of stuff in that measures data frame, but we only want to analyse certain measures. We're going to prep by taking what we want, shifting to long format from wide, and nesting again.
 
 ```{r}
-coef.interest <- coef.interest <- c("auc24", "auc36", "mumax", "K", "lambda")
 df.measures.nest <- df.measures %>%
   select(strain, Buffer, Ions, condition, sample_name, auc24, auc36, mumax, K, lambda) %>%
-  pivot_longer(cols = all_of(coef.interest), names_to = "measures", values_to = "values") %>%
+  pivot_longer(cols = c(auc24, auc36, mumax, K, lambda), names_to = "measures", values_to = "values") %>%
   group_by(measures) %>%
   nest() %>%
   ungroup(measures)
@@ -706,7 +703,7 @@ names(sixcolor) <- unique(dfExtended$strain)
 "Raw" data points from the calcualted values put into long format, which ggplot2 likes better.
 ```{r}
 plotdf.data <- df.measures %>% ungroup() %>%
-  pivot_longer(cols = coef.interest, names_to = "measures", values_to = "values")
+  pivot_longer(cols = c(auc24, auc36, mumax, K, lambda), names_to = "measures", values_to = "values")
 ```
 
 When we go to label the plots with the letters, we need to tell ggplot what y-position to put them at.
@@ -1045,21 +1042,24 @@ df.aovs <- df.aovs %>% mutate(
 
 ### The jittered measurement plot
 
-Now we only have 4 conditions to color over.
+Now we only have 4 conditions to color over. I'm going to shortcut making variable, but using `interaction` to create every possible combination of the lists I give it (here just two lists, each two entries long.)
 
 ```{r}
 fourcolor <- paletteer_d("LaCroixColoR::PassionFruit", 5)[c(1,3,4,5)]
-names(fourcolor) <- unique(interaction(df.cld.byStrains$Buffer, df.cld.byStrains$Ions))
+names(fourcolor) <- interaction(unique(df.measures$Buffer), unique(df.measures$Ions))
 ```
 
+Again, formatting data and adding y-positions. When we plot, the interaction term is just going to combine whatever is in the `Buffer` column with what's in the `Ions` column for that row.
 ```{r}
 df.cld.byStrains <- df.aovs %>% select(measures, clds.byStrains) %>%
   unnest(clds.byStrains) %>%
   mutate(.group.letter = lettersub(.group)) %>%
   plot_format.factorialconds
 
-df.cld.byStrain.plot <- full_join(df.cld.byStrains, df.maxes,
-                                 by = c("strain", "measures", "Buffer", "Ions")) %>%
+df.cld.byStrain.plot <- full_join(
+  df.cld.byStrains,
+  df.maxes,
+  by = c("strain", "measures", "Buffer", "Ions")) %>%
   add_label_ypos
 
 measureplot.strains <- ggplot(data = df.cld.byStrain.plot, aes(x = interaction(Buffer, Ions),
