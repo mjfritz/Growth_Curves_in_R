@@ -27,9 +27,9 @@ This requires some familiarity with R (such as understanding how to call a funct
 
 This will track exactly what lines of code your ran (which leave out what you did not), as well Document your analysis and save your results together, as if in a lab notebook. (See [this resource](https://bookdown.org/yihui/rmarkdown/notebook.html) for more in depth help with notebooks.) Using the code chunks in a notebook will also help with troubleshooting, as the pipeline will be broken up.
 
-Troubleshooting is a huge part of programming. Don't be 
+Troubleshooting is a huge part of programming. Don't be scared of errors or the forums. 
 
-For general R help: [R for Data Science](https://r4ds.had.co.nz/), Google, stackoverflow, and any results from STDHA and datanovia are very helpful. Searching for the exact wording of an error, or just what you're trying to accomplish in general can typically generate good results. I also like to use the "Environment" pane in RStudio to see what variables I have in use. Clicking on their names will also allow you to vew them in matrix format, where you can hover over column names for data type info. This is often helpful for debugging.
+For general R help: [R for Data Science](https://r4ds.had.co.nz/), Google, stackoverflow, and any results from STDHA and datanovia are very helpful. Searching for the exact wording of an error, or just what you're trying to accomplish in general can typically generate good results. I also like to use the "Environment" pane in RStudio to see what variables I have in use. Clicking on their names will also allow you to view them in matrix format, where you can hover over column names for data type info. This is often helpful for debugging.
 
 (Also, I am a bit of a novice to coding, so there are definitely multiple ways of accomplishing similar goals. Some much more elegant than these. But I don't know them yet.)
 
@@ -46,7 +46,9 @@ Most packages are stored in an online respository that R can access easily (call
 These packages are what I run. Some of them are not entirely necessary, but I use in this tutorial and make things easier/nicer. I have marked them. In particular, *if you are only running the parsing script to format data* you only need the packages marked "Needed for Parsing." (To not load a package, comment that line of code out with `Ctrl+Shift+C` when on that line, or while highlighting multiple lines.)
 ```{r}
 library(rstatix)
-library(openxlsx) # Needed for Parsing, those base R has caught up a bit
+library(openxlsx) # Needed for Parsing
+library(DescTools) # Needed for calculating AUC
+library(multcomp) # Needed for assigning compact letter displays
 library(janitor)
 library(reshape2)
 library(paletteer) # Not necessary
@@ -63,6 +65,8 @@ You should see a bunch of red text, some of which will talk about objects being 
 The last line should be a call that tells you the folder where the `here` package is rooting all of your paths out from. Now, whenever you use a line like `here("a folder", "a file.pdf")`, the function will look for "a file.pdf" in the "a folder" sub-folder of the base directory. (Typically the base directory is automatically set as the project folder that contains the ".proj" file.) In these examples, I've used the `here` package to create semi-nonspecfic directions to the file (which is useful for when your project folders move around, but the R-notebook and the files stay together. It assumes that the data structure within a project folder stays the same.) The `here` function also removes system-specific jargon (Windows use \ instead of / in filing, unlike other OSs.)
 
 (As a note, the `here` function name is used by multiple packages, so sometimes you'll think you are using `here` from the `here` package, but you are using the function from another, say `stats`. If a line of code is giving you problems contains a `here()`, try putting in place `here::here()` which tells R to specifically go to the `here` package and use that version of the function. If we instead wanted the stats version, we would use `stats::here()` to override whatever R is defaulting on.)
+
+If you make a new R-project folder with your experimental data in, you can copy over the script and notebook into the main project folder, and things should run just fine.
 
 
 These are packages that are helpful in making great plots, but not necessary for this tutorial (and so have been commented out.)
@@ -109,41 +113,49 @@ The plate reader you use will determine which function you will call.
 * `parse_growth_Spark` for the Tecan Spark (coming from Tecan's Spark Control software)
 * `parse_growth_Versa_xlsx` for the two VersaMax (coming from SoftMax Pro software, and saved as an xlsx)
 
+Both versions of the function expect:  
 
-For the Tecan Spark, if you are using timing other than reads every 10 minutes over 48 hours you, you will need to adjust the code for the `parse_growth_Spark` function, so that the rows it looks to read in, match the rows that you have data at.
-
-Both functions expect:  
-
-1. The data file with a path.  (e.g. "C:\My Documents\GC\plate1.xlsx")
+1. `datafilewithpath`: The data file with a path.  (e.g. "C:\My Documents\GC\plate1.xlsx")
    + `here()` Explanation
-2. The template file with a path.  
-3. What format you want the output data in (options are "R", "prism", "python"). This mostly affects how it formats the time column. This is useful if you only intend to use this to automate formatting before moving into Prism.
-4. Whether or not to remove the media blanks.
+2. `templatewithpath`: The template file with a path.  
+3. `output`: What format you want the output data in (options are "R", "prism", "python"). This mostly affects how it formats the time column. This is useful if you only intend to use this to automate formatting before moving into Prism.
+4. `remove_emptys`: Whether or not to remove the media blanks.
    + If you inoculated with enough cells to affect the OD *and* you don't wish to use this value as the baseline, make this parameter `FALSE`. You will want to then want to modify the `format_GC` function in the R script itself. See the comments in that section for help.
    + After modification, you'll need to read save the `parse_96wellGrowthCurves.R` file, and re-run `source(here...)` line to load the changes.
-5. A folder where it will write a copy of the parsed out data as csv file. It will create the folder if it does not exist already.
+5. `outputfoldername`: A name for the folder where it will write a copy of the parsed out data as csv file. It will create the folder if it does not exist already. If you dont' want to save an external copy, don't list this option.
+6. `totalduration`: The total run time as a number. The Tecan version must be either `24` or `48`, but the VersaMax can handle up to 48 hours.
+6. If you are running from the Tecan, `intervalinminutes`: The time between each read, as a whole number of minutes. This needs to divide an hour evenly (e.g. 15 minutes is good, but 18 minutes is not.)
+
+(If your raw data and/or template is not in sub-folder named "data", either delete or change that part of the `here()` call.)
+
+If you have extra kinetic methods beyond shaking and reading, the Tecan Spark code may need lines 118 and possibly 122 in `parse_96wellGrowthCurves.R` adjusted to account for where the reads start/end. Just look at the excel spreadsheet that the plate reader gives you, and find the numbers of the rows that the raw data starts on (the numbers, not the column headers), and change the instances of`54` (and `54+readsperday+24` if you are doing 48 hours curves) to the row numbers. Don't forget to save, and then either click the "Source" button on the top right, or re-run `source(here("parse_96wellGrowthCurves.R"))` line in this notebook.
 
 Here I'm loading 5 different plates, all from the same series. (The R and C naming is to help me remember what each experiment was. Name these according to what helps you.)
 ```{r}
 R1 <- parse_growth_Spark(datawithpath = here("data", "1-10-2021_RKS-swap1.xlsx"),
                          templatewithpath = here("data", "1-10-2021_plate_template.xlsx"),
-                         output = "R", remove_emptys = TRUE, outputfoldername = "parsed")
+                         output = "R", remove_emptys = TRUE, outputfoldername = "parsed",
+                         totalduration = 48, interval = 10)
 
 C2 <- parse_growth_Spark(here("data", "1-17-2021_CSH-swap2.xlsx"),
                          here("data", "1-17-2021_plate_template.xlsx"),
-                          "R", remove_emptys = TRUE, outputfoldername = "parsed")
+                          "R", remove_emptys = TRUE, outputfoldername = "parsed",
+                         totalduration = 48, interval = 10)
 
 C3 <- parse_growth_Spark(here("data", "1-20-2021_CSH-swap3.xlsx"),
                          here("data", "1-20-2021_plate_template.xlsx"),
-                          "R", remove_emptys = TRUE, outputfoldername = "parsed")
+                          "R", remove_emptys = TRUE, outputfoldername = "parsed",
+                         totalduration = 48, interval = 10)
 
 R2 <- parse_growth_Spark(here("data", "1-22-2021_RKS-swap2.xlsx"),
                          here("data", "1-22-2021_plate_template.xlsx"),
-                         "R", remove_emptys = TRUE, outputfoldername = "parsed")
+                         "R", remove_emptys = TRUE, outputfoldername = "parsed",
+                         totalduration = 48, interval = 10)
 
 R3 <- parse_growth_Spark(here("data", "1-24-2021_RKS-swap3.xlsx"),
                          here("data", "1-24-2021_plate_template.xlsx"),
-                         "R", remove_emptys = TRUE, outputfoldername = "parsed")
+                         "R", remove_emptys = TRUE, outputfoldername = "parsed",
+                         totalduration = 48, interval = 10)
 
 ```
 These functions don't return a single dataframe (or matrix/spreadsheet0), but rather a _list_ of 3 of them. Within these dataframes, the data has been formated to give each replicate its own `sample_name` of the format `[strain].[condition].[platename].[replicate number on plate]`.
@@ -241,11 +253,12 @@ These sorts of quick plots are good for giving you a general idea of what is goi
 
 ## Combining data
 
-The melted format (where all plates have the same column names) makes combining data easy. We will simply attach each data frame to the bottom of the last.
+The melted format (where all plates have the same column names) makes combining data easy. We will simply attach each melted data frame to the bottom of the last. You should have as many entries as you had plates.
 ```{r}
 allplates <- bind_rows(R1[[2]], R2[[2]], R3[[2]], C2[[2]], C3[[2]])
 nrow(allplates)
 ```
+The total number of rows should be the total number of wells you're considering (not blanks) times the number of time points you have.
 
 Again we can also get an idea of what all of the data looks like on the same plot via individual replicates.
 
@@ -380,7 +393,7 @@ testplot
 ggsave(here("testplot.pdf"), testplot, height = 8, width = 6)
 ```
 
-Note that the colors stayed consistant with my first plots, and the order changed.
+Note that the colors stayed consistent with my first plots, and the order changed.
 
 To get fancy, I'd like to trim my x-axis and re-label the faceting variable by both the variable and its value. I'm also going to save fancy, but adding the date into the save name (which can be great if you keep remkaing plots.) Also note that I didn't need to specify the name of the plot object, it's just going to save the last plot called.
 ```{r}
@@ -394,7 +407,7 @@ R will warn you that you are omitting data points.
 
 #### For single varaible conditions (and vurther examples of labeling)
 
-Returning again to the single varialbe `condition`, to display names other than what is in the conditions variable, we'll use a trick similar to the named color vectors, and make a named list of labels. Because we'll feed them into ggplot's labelling functions, you can use special notation (with `label_wrap_gen`) or plotmath notation (with `label_parsed`) to get italics, sub/superscripts, and symbols. (Google will be your best friend here. As it always is with all coding.) We will use a much messier version later, too.  
+Returning again to the single variable `condition`, to display names other than what is in the conditions variable, we'll use a trick similar to the named color vectors, and make a named list of labels. Because we'll feed them into ggplot's labelling functions, you can use special notation (with `label_wrap_gen`) or plotmath notation (with `label_parsed`) to get italics, sub/superscripts, and symbols. (Google will be your best friend here. As it always is with all coding.) We will use a much messier version later, too.  
 The list assigned to the `names` call must match the values in the `condition` variable. Again, make sure that the order of the lists match each other (they don't necessarily have to match the display order).
 ```{r}
 conds.labels <- c("RKS Buffer\nRKS Ions", "RKS Buffer\nCSH Ions", "CSH Buffer\nRKS Ions", "CSH Buffer\nCSH Ions")
@@ -528,8 +541,13 @@ lambda = lag time in hours
 
 Because of how numerical fitting works, we have to give the function starting estimates of what we think each parameter should be, and also constraints on the parameters of what is unreasonable. Pick these number based on your original plots of the curves. `mumax` can be hard to guess, but it's typically between 0.1 and 5. 
 
-(Note that this example chooses to fit log transformed data, which tends to ensure the log-phase growth is well fit, but not necessarily the stationary phase. Try out `transform = "none"` to see what looks best.)
+We are going to "set the seed" so that the pseudo-random aspects of curve fitting are consistent between fittings. (If your starting values are near a bifurcation point (starting at values greater than that point veers one direction, starting below the value veers another), the fitting algorithms could product different fits each time.) If you were to fit again later, setting to the same seed guarantees the same results. You can put any number you like here. 
+
+(Also note that this example chooses to fit log transformed data, which tends to ensure the log-phase growth is well fit, but not necessarily the stationary phase. Try out `transform = "none"` to see what looks best.)
 ```{r}
+## Setting the seed for the pseudo-RNG
+set.seed(8)
+
 ## initial parameters and box constraints
 p   <- c(y0 = 0.1, mumax = .2, K = 2, lambda = 10)
 
@@ -544,7 +562,8 @@ many_gompertz1 <- all_growthmodels(
                    transform = "log", ncores = 2)
 ```
 
-Now we're going to re-fit to try to hone in even more. This is the opportunity to adjust the lag time (lambda) to whatever is in the ballpark of what you think it should be based on the original plots.. You might want to do this if you don't expect lag to be changing very much, so as to re-focus where the parameters should be changing. It will help disentangle the interplay between growth rate (mumax) and lag (lambda), which you can imagine as vertical line crossing the x-axis at, say, 10. Rotating the line clockwise (making the slope less steep) will move the x-intercept (or lag) away from 10 and towards 0.
+Now we're going to re-fit to try to hone in even more, because our starting guesses are not often very good. This is the opportunity to adjust the lag time (lambda) to whatever is in the ballpark of what you think it should be based on the original plots.. You might want to do this if you don't expect lag to be changing very much, so as to re-focus where the parameters should be changing. It will help disentangle the interplay between growth rate (mumax) and lag (lambda), which you can imagine as vertical line crossing the x-axis at, say, 10. Rotating the line clockwise (making the slope less steep) will move the x-intercept (or lag) away from 10 and towards 0.
+
 ```{r}
 ## use coefficients of first fit as new initial parameters
 pp   <- coef(many_gompertz1)
@@ -558,8 +577,8 @@ many_gompertz2 <- all_growthmodels(
                    transform = "log", ncores = 2)
 ```
 
-To store the fits in a matrix/data table format, we extract them with `results()`.
-The `View()` function is similar to clicking the varialbe name in the Environment window. If you see numbers that are bumping up against your limits, go back and try tweaking the other intial parameters.
+To store the fits in a matrix/data table format, we extract them with `results()`. **It's good to take a look at these numbers, in comparison to your limits. **
+The `View()` function is similar to clicking the variable name in the Environment window. If you see numbers that are bumping up against your limits, go back and try tweaking the initial parameters.
 ```{r}
 df.params <- results(many_gompertz2)
 nrow(df.params)
@@ -651,15 +670,21 @@ df.aovs <- df.measures.nest %>% mutate(
   clds.byConds = map(mt.byConds, ~cld(.x[[1]], alpha = 0.05, adjust = "sidak"))
 )
 ```
-Note, trying to view df.aovs almost crashes Rstudio.
+Note, trying to view `df.aovs` almost crashes Rstudio.
 
-We can look at the overall results of the anovas. They are going to display in the same order as the rows of the data frame. (So here, auc24 is first, lambda is last.)
+We can look at the overall results of the anovas. (`pwalk` is similar to map, but it takes a list of vectors, and iterates in applies a function in parallel, similar to performing the function at each row)
+
 ```{r}
-df.aovs$measures
-lapply(df.aovs$aovs, summary)
+pwalk(df.aovs %>% select(measures, aovs),
+      function(measures, aovs){
+        cat("\nAnova results for: ", measures, "\n")
+        print(summary(aovs))
+})
 ```
 
 We are OK to look at the means testing. And there is a lot to try to get from these results just looking, but let's plot.
+
+Note that I did not cover the validity of doing an ANOVA. Functions to test sphericity and distribution can be applied in a similar manner to the other `mutate` calls, in the form of: `mutate( newvariable = map(data, ~testingFunction))`.
 
 ### Some things we will need
 
@@ -754,10 +779,14 @@ write.xlsx(file = here(paste0("calculated_GCmeasures_CLDs_", Sys.Date(), ".xlsx"
 
 This is a beast, so I tried to include a lot of notes.
 
+Also, there is a jittering function in here to make the data points easier to see. It works on the random seed, however. So if you don't like where your dots are you can use either of the commented-out `set.seed()` calls to let the seed do whatever (`NULL`) or try out different numbers to get different but reproducible results.
+
 ```{r}
+# set.seed(NULL) # Let the jitter do whatever it wants
+# set.seed(294) # Set the seed to a specific number you can change at will
 measureplot.conditions <- ggplot(data = df.cld.plot, aes(x = strain, color = strain)) +
   
-  # This is me highlighting a sepecific plot
+  # This is me highlighting a specific plot
   geom_rect(data = subset(df.cld.plot, condition == "RKS"),
             # fill = "#757575", alpha = 0.2,
             fill = NA,

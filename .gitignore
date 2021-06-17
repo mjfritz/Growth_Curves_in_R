@@ -1,3 +1,4 @@
+
 # History files
 .Rhistory
 .Rapp.history
@@ -19,6 +20,7 @@
 
 # RStudio files
 .Rproj.user/
+*.Rproj
 .Rprofile
 
 # produced vignettes
@@ -45,11 +47,16 @@ docs/
 # translation temp files
 po/*~
 
+
+
 # Created files
 parsed/
 testplot.pdf
+
 *.nb.html
+
 troubleshooting/
 calculated_GCmeasures_*
 *.png
+
 *Growth Curves in R.pptx

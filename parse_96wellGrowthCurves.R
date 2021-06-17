@@ -96,26 +96,41 @@ This may not be expandable to all cases.
 # Ex. I think 24 hours will not have two separate chunks of data, so there will only be one range for meta data, and one range for the first sheet.
 # This would also remove the need to bind_rows, but would need to be assigned to gd, then.
 parse_growth_Spark <- function(datawithpath, templatewithpath, output = NULL,
-                              remove_emptys = c(TRUE, FALSE), outputfoldername = NULL){
+                                   remove_emptys = c(TRUE, FALSE), outputfoldername = NULL,
+                                    totalduration = c(24, 48), intervalinminutes){
   sheets <- vector("list", 2)
   prism = NULL
   
-  #Ignoring the Meta data
+  # Function from is.integer example to test for whole numbers
+  is.wholenumber <-
+    function(x, tol = .Machine$double.eps^0.5)  abs(x - round(x)) < tol
 
+  if (!is.wholenumber(intervalinminutes)) {
+    print("Please enter the interval as a whole number of minutes.")
+    return()
+  }
+  
+  #Ignoring the Meta data
+  readsperday <- (24*60)/intervalinminutes
   
   #These rows and columns are dependent on the number of cycles and timepoints
   sheets[[1]] <- read.xlsx(datawithpath,
-                         rows = 54:198, cols = 2:99,
-                         skipEmptyCols = TRUE,
-                         rowNames = FALSE, colNames = TRUE, check.names = TRUE)
-  sheets[[2]] <- read.xlsx(datawithpath,
-                         rows = 221:365, cols = 2:99,
-                         skipEmptyCols = TRUE,
-                         rowNames = FALSE, colNames = TRUE, check.names = TRUE)
+                           rows = 54:(54+readsperday), cols = 2:99,
+                           skipEmptyCols = TRUE,
+                           rowNames = FALSE, colNames = TRUE, check.names = TRUE)
+  if (totalduration == 48){
+    secondstart = 54+readsperday+23
+    sheets[[2]] <- read.xlsx(datawithpath,
+                           rows = secondstart:(secondstart+readsperday), cols = 2:99,
+                           skipEmptyCols = TRUE,
+                           rowNames = FALSE, colNames = TRUE, check.names = TRUE)
   
   #For simplicities sake, going to add 24 hours in seconds to all the times in the second data set to combine.
   sheets[[2]]$`Time..s.` <- sheets[[2]]$`Time..s.` + 86400
   gd <- bind_rows(sheets[[1]], sheets[[2]])
+  } else {
+    gd <- sheets[[1]]
+  }
   
   if(!is.null(output)){
     if (output == "python"){
@@ -135,16 +150,16 @@ parse_growth_Spark <- function(datawithpath, templatewithpath, output = NULL,
   } else { # Letting the "R" format be the default
     gd$time <- round(gd$`Time..s.`/60/60, 2) # Converting to hours
   }
-
+  
   gd <- subset(gd, select=-c(`Time..s.`, `Temp....C.`)) # Remove unwanted columns
   gd <- assign_wells(templatewithpath, gd, output, remove_emptys) # Rename columns based on samples
   gd <- gd[ , order(names(gd))]
   gd <- gd %>% relocate(time)
   
-
+  
   # Creating a melted data frame for graphing
   mp <- melt_plate(gd, prism)
-
+  
   # Check to see what if the output is being saved and where, with error check.
   if(!is.null(output)){
     if(!is.null(outputfoldername)){
@@ -174,9 +189,11 @@ parse_growth_Spark <- function(datawithpath, templatewithpath, output = NULL,
   } else{
     print("Not saving parsed file.")
   }
-
+  
   return(setNames(list(gd, mp[[1]], mp[[2]]), c("data", "melted", "sample_data")))
 }
+
+
 
 
 # For 48 hour growth curves on the older VersaMax machines. Still unsure about input difference between machines.
@@ -185,8 +202,14 @@ parse_growth_Spark <- function(datawithpath, templatewithpath, output = NULL,
 # For other length data, make sure that the # of BLOCKS is 1, and modify the read.xlsx call to either replace the startRow parameter with
 # a rows parameter or just modify it. For Less than 48 hours, you can remove the secondhalf bit, as well as the bind_rows call that combines the data frames.
 parse_growth_VersaMax_xlsx <- function(datawithpath, templatewithpath, output = NULL,
-                                       remove_emptys = c(TRUE, FALSE), outputfoldername = NULL){
+                                       remove_emptys = c(TRUE, FALSE), outputfoldername = NULL,
+                                       totalduration){
   prism = NULL
+  if(!is.numeric(totalduration) <= 48 ) {
+    print("The total duration should be anumber in hours and less than or equal to 48.")
+    return()
+  }
+  
   df <- read.xlsx(datawithpath,
                   startRow = 3,
                   skipEmptyCols = TRUE,
@@ -198,15 +221,18 @@ parse_growth_VersaMax_xlsx <- function(datawithpath, templatewithpath, output = 
   firsthalf <- df[!(grepl("\\:", df$Time)), ] %>%
     mutate(time = round(as.numeric(Time)*24, 2)) %>%
     relocate(time) %>% select(-c(Time, temp))
+  
+  if(totalduration > 24){
   secondhalf <- df[grepl("\\:", df$Time), ] %>%
     separate(Time, into = c("days", "hours", "minutes", "seconds"), sep = "[.:]", convert = TRUE, fill = "left") %>%
     mutate(time = round(days*24 + hours + minutes/60 + seconds/(60*60), 2)) %>%
     relocate(time) %>% select(-c( temp, days, hours, minutes, seconds))
-  
-  
-  
-  # Combine and assign sample names
   gd <- bind_rows(firsthalf, secondhalf) %>% arrange(time)
+  } else{
+    gd <- firsthalf %>% arrange(time)
+  }
+  
+  # Assign sample names
   gd <- assign_wells(templatewithpath, gd, output, remove_emptys) # Rename columns based on samples
   gd <- gd[ , order(names(gd))]
   gd <- gd %>% relocate(time)
